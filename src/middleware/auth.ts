@@ -33,7 +33,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
       displayName: decodedToken.name || '',
       photoURL: decodedToken.picture || '',
       preferences: {
-        currency: 'USD',
+        currency: 'INR',
         language: 'en',
         notifications: {
           email: true,

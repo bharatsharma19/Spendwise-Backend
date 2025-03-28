@@ -73,7 +73,7 @@ export class AuthController {
         displayName: userRecord.displayName || '',
         photoURL: userRecord.photoURL || '',
         preferences: {
-          currency: 'USD',
+          currency: 'INR',
           language: 'en',
           notifications: {
             email: true,
@@ -168,13 +168,13 @@ export class AuthController {
         );
       }
 
-      if (!userData.isPhoneVerified) {
-        throw new AppError(
-          'Please verify your phone number before logging in',
-          HttpStatusCode.FORBIDDEN,
-          ErrorType.AUTHENTICATION
-        );
-      }
+      // if (!userData.isPhoneVerified) {
+      //   throw new AppError(
+      //     'Please verify your phone number before logging in',
+      //     HttpStatusCode.FORBIDDEN,
+      //     ErrorType.AUTHENTICATION
+      //   );
+      // }
 
       res.json({
         status: 'success',

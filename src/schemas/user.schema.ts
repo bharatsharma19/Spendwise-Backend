@@ -15,6 +15,6 @@ export const userPreferencesSchema = Joi.object({
     email: Joi.boolean().default(true),
     push: Joi.boolean().default(true),
   }).default(),
-  currency: Joi.string().default('USD'),
+  currency: Joi.string().default('INR'),
   language: Joi.string().default('en'),
 });

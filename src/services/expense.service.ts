@@ -62,137 +62,231 @@ export class ExpenseService extends BaseService {
     return ExpenseService.instance;
   }
 
+  /**
+   * Creates a new expense
+   * @param userId User ID
+   * @param data Expense data
+   * @returns Created expense
+   */
   async createExpense(userId: string, data: CreateExpenseDto): Promise<ExpenseResponse> {
-    const expenseData = {
-      ...data,
-      userId,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      currency: data.currency || 'USD', // Default to USD if not specified
-      description: data.description || '', // Default to empty string if not specified
-      isRecurring: data.isRecurring || false, // Default to false if not specified
-      isSplit: data.isSplit || false, // Default to false if not specified
-      date: data.date instanceof Date ? data.date : new Date(data.date), // Ensure date is always a Date object
-    };
-
-    const docRef = await db.collection('expenses').add(expenseData);
-
-    return {
-      id: docRef.id,
-      ...expenseData,
-      createdAt: expenseData.createdAt.toDate(),
-      updatedAt: expenseData.updatedAt.toDate(),
-    } as unknown as ExpenseResponse;
-  }
-
-  async getExpenseById(userId: string, id: string): Promise<ExpenseResponse> {
-    const expenseRef = db.collection('expenses').doc(id);
-    const expense = await expenseRef.get();
-
-    if (!expense.exists) {
-      throw new NotFoundError('Expense not found');
-    }
-
-    const expenseData = expense.data();
-    if (!expenseData || expenseData.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    return {
-      id: expense.id,
-      ...expenseData,
-      createdAt: expenseData.createdAt.toDate(),
-      updatedAt: expenseData.updatedAt.toDate(),
-      date: expenseData.date instanceof Date ? expenseData.date : new Date(expenseData.date),
-    } as unknown as ExpenseResponse;
-  }
-
-  async getExpensesByUserId(userId: string, query: ExpenseQuery = {}): Promise<ExpenseResponse[]> {
-    let expensesRef = db.collection('expenses').where('userId', '==', userId);
-
-    if (query.startDate) {
-      expensesRef = expensesRef.where('date', '>=', query.startDate);
-    }
-
-    if (query.endDate) {
-      expensesRef = expensesRef.where('date', '<=', query.endDate);
-    }
-
-    if (query.category) {
-      expensesRef = expensesRef.where('category', '==', query.category);
-    }
-
-    if (query.isRecurring !== undefined) {
-      expensesRef = expensesRef.where('isRecurring', '==', query.isRecurring);
-    }
-
-    const snapshot = await expensesRef.orderBy('date', 'desc').get();
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
+    try {
+      const expenseData = {
         ...data,
-        createdAt: data.createdAt.toDate(),
-        updatedAt: data.updatedAt.toDate(),
+        userId,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        currency: data.currency || 'INR',
+        description: data.description || '',
+        isRecurring: data.isRecurring || false,
+        isSplit: data.isSplit || false,
         date: data.date instanceof Date ? data.date : new Date(data.date),
+      };
+
+      const docRef = await db.collection('expenses').add(expenseData);
+
+      return {
+        id: docRef.id,
+        ...expenseData,
+        createdAt: expenseData.createdAt.toDate(),
+        updatedAt: expenseData.updatedAt.toDate(),
       } as unknown as ExpenseResponse;
-    });
+    } catch (error) {
+      throw new AppError(
+        'Failed to create expense',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
   }
 
+  /**
+   * Gets expense by ID
+   * @param userId User ID
+   * @param id Expense ID
+   * @returns Expense data
+   */
+  async getExpenseById(userId: string, id: string): Promise<ExpenseResponse> {
+    try {
+      const expenseRef = db.collection('expenses').doc(id);
+      const expense = await expenseRef.get();
+
+      if (!expense.exists) {
+        throw new NotFoundError('Expense not found');
+      }
+
+      const expenseData = expense.data();
+      if (!expenseData || expenseData.userId !== userId) {
+        throw new AuthorizationError('Unauthorized access');
+      }
+
+      return {
+        id: expense.id,
+        ...expenseData,
+        createdAt: expenseData.createdAt?.toDate() || new Date(),
+        updatedAt: expenseData.updatedAt?.toDate() || new Date(),
+        date:
+          expenseData.date instanceof Timestamp
+            ? expenseData.date.toDate()
+            : new Date(expenseData.date),
+      } as unknown as ExpenseResponse;
+    } catch (error) {
+      if (error instanceof NotFoundError || error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AppError(
+        'Failed to get expense',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  /**
+   * Gets expenses by user ID with optional filtering
+   * @param userId User ID
+   * @param query Filter query
+   * @returns List of expenses
+   */
+  async getExpensesByUserId(userId: string, query: ExpenseQuery = {}): Promise<ExpenseResponse[]> {
+    try {
+      let expensesRef = db.collection('expenses').where('userId', '==', userId);
+
+      if (query.startDate) {
+        expensesRef = expensesRef.where('date', '>=', query.startDate);
+      }
+
+      if (query.endDate) {
+        expensesRef = expensesRef.where('date', '<=', query.endDate);
+      }
+
+      if (query.category) {
+        expensesRef = expensesRef.where('category', '==', query.category);
+      }
+
+      if (query.isRecurring !== undefined) {
+        expensesRef = expensesRef.where('isRecurring', '==', query.isRecurring);
+      }
+
+      const snapshot = await expensesRef.orderBy('date', 'desc').get();
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+          date: data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date),
+        } as unknown as ExpenseResponse;
+      });
+    } catch (error) {
+      throw new AppError(
+        'Failed to get expenses',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  /**
+   * Updates an expense
+   * @param userId User ID
+   * @param id Expense ID
+   * @param data Updated expense data
+   * @returns Updated expense
+   */
   async updateExpense(
     userId: string,
     id: string,
     data: Partial<ExpenseData>
   ): Promise<ExpenseResponse> {
-    const expenseRef = db.collection('expenses').doc(id);
-    const expense = await expenseRef.get();
+    try {
+      const expenseRef = db.collection('expenses').doc(id);
+      const expense = await expenseRef.get();
 
-    if (!expense.exists) {
-      throw new NotFoundError('Expense not found');
+      if (!expense.exists) {
+        throw new NotFoundError('Expense not found');
+      }
+
+      const expenseData = expense.data();
+      if (!expenseData || expenseData.userId !== userId) {
+        throw new AuthorizationError('Unauthorized access');
+      }
+
+      const updateData = {
+        ...data,
+        updatedAt: Timestamp.now(),
+      };
+
+      await expenseRef.update(updateData);
+
+      const updatedExpense = await expenseRef.get();
+      const updatedData = updatedExpense.data();
+
+      if (!updatedData) {
+        throw new NotFoundError('Updated expense not found');
+      }
+
+      return {
+        id: expense.id,
+        ...updatedData,
+        createdAt: updatedData.createdAt?.toDate() || new Date(),
+        updatedAt: updatedData.updatedAt?.toDate() || new Date(),
+        date:
+          updatedData.date instanceof Timestamp
+            ? updatedData.date.toDate()
+            : new Date(updatedData.date),
+      } as unknown as ExpenseResponse;
+    } catch (error) {
+      if (error instanceof NotFoundError || error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AppError(
+        'Failed to update expense',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
     }
-
-    const expenseData = expense.data();
-    if (!expenseData || expenseData.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    const updateData = {
-      ...data,
-      updatedAt: Timestamp.now(),
-    };
-
-    await expenseRef.update(updateData);
-
-    return {
-      id: expense.id,
-      ...expenseData,
-      ...updateData,
-      createdAt: expenseData.createdAt.toDate(),
-      updatedAt: updateData.updatedAt.toDate(),
-      date: updateData.date
-        ? updateData.date instanceof Date
-          ? updateData.date
-          : new Date(updateData.date)
-        : expenseData.date,
-    } as unknown as ExpenseResponse;
   }
 
+  /**
+   * Deletes an expense
+   * @param userId User ID
+   * @param id Expense ID
+   */
   async deleteExpense(userId: string, id: string): Promise<void> {
-    const expenseRef = db.collection('expenses').doc(id);
-    const expense = await expenseRef.get();
+    try {
+      const expenseRef = db.collection('expenses').doc(id);
+      const expense = await expenseRef.get();
 
-    if (!expense.exists) {
-      throw new NotFoundError('Expense not found');
+      if (!expense.exists) {
+        throw new NotFoundError('Expense not found');
+      }
+
+      const expenseData = expense.data();
+      if (!expenseData || expenseData.userId !== userId) {
+        throw new AuthorizationError('Unauthorized access');
+      }
+
+      await expenseRef.delete();
+    } catch (error) {
+      if (error instanceof NotFoundError || error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AppError(
+        'Failed to delete expense',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
     }
-
-    const expenseData = expense.data();
-    if (!expenseData || expenseData.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    await expenseRef.delete();
   }
 
+  /**
+   * Generates expense analytics
+   * @param userId User ID
+   * @param startDate Start date
+   * @param endDate End date
+   * @returns Expense analytics
+   */
   async getExpenseAnalytics(
     userId: string,
     startDate: Date,
@@ -210,7 +304,8 @@ export class ExpenseService extends BaseService {
       // Calculate category totals
       const categoryTotals = expenses.reduce(
         (acc, expense) => {
-          acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
+          const category = expense.category || 'other';
+          acc[category] = (acc[category] || 0) + expense.amount;
           return acc;
         },
         {} as Record<ExpenseCategory, number>
@@ -250,10 +345,16 @@ export class ExpenseService extends BaseService {
     }
   }
 
+  /**
+   * Calculates monthly spending trends
+   * @param expenses List of expenses
+   * @returns Monthly trends data
+   */
   private calculateMonthlyTrends(expenses: ExpenseResponse[]) {
     const monthlyData = expenses.reduce(
       (acc, expense) => {
-        const month = expense.date.toISOString().slice(0, 7); // YYYY-MM
+        const date = expense.date instanceof Date ? expense.date : new Date(expense.date);
+        const month = date.toISOString().slice(0, 7); // YYYY-MM
         if (!acc[month]) {
           acc[month] = {
             total: 0,
@@ -261,8 +362,9 @@ export class ExpenseService extends BaseService {
           };
         }
         acc[month].total += expense.amount;
-        acc[month].categoryTotals[expense.category] =
-          (acc[month].categoryTotals[expense.category] || 0) + expense.amount;
+        const category = expense.category || 'other';
+        acc[month].categoryTotals[category] =
+          (acc[month].categoryTotals[category] || 0) + expense.amount;
         return acc;
       },
       {} as Record<string, { total: number; categoryTotals: Record<ExpenseCategory, number> }>
@@ -275,24 +377,40 @@ export class ExpenseService extends BaseService {
     }));
   }
 
+  /**
+   * Generates spending insights
+   * @param expenses List of expenses
+   * @param total Total spending
+   * @param categoryTotals Category totals
+   * @returns Array of insights
+   */
   private generateInsights(
     expenses: ExpenseResponse[],
     total: number,
     categoryTotals: Record<ExpenseCategory, number>
   ) {
     const insights = [];
+
+    if (expenses.length === 0) {
+      return [{ type: 'no_data', message: 'No expense data available for insights' }];
+    }
+
     const averageSpending = total / expenses.length;
 
     // Top spending category insight
-    const topCategory = Object.entries(categoryTotals).sort(([, a], [, b]) => b - a)[0];
-    if (topCategory) {
-      insights.push({
-        type: 'category_insight',
-        message: `Your top spending category is ${topCategory[0]} at ${(
-          (topCategory[1] / total) *
-          100
-        ).toFixed(1)}%`,
-      });
+    const topCategories = Object.entries(categoryTotals).sort(([, a], [, b]) => b - a);
+    if (topCategories.length > 0) {
+      const topCategory = topCategories[0];
+      if (topCategory && topCategory.length === 2) {
+        const [categoryName, categoryAmount] = topCategory;
+        insights.push({
+          type: 'category_insight',
+          message: `Your top spending category is ${categoryName} at ${(
+            (categoryAmount / total) *
+            100
+          ).toFixed(1)}%`,
+        });
+      }
     }
 
     // Average spending insight
@@ -301,144 +419,260 @@ export class ExpenseService extends BaseService {
       message: `Your average spending is ${averageSpending.toFixed(2)} per transaction`,
     });
 
+    // Month-over-month comparison if possible
+    if (expenses.length > 0) {
+      const months = new Set<string>();
+      expenses.forEach((expense) => {
+        const date = expense.date instanceof Date ? expense.date : new Date(expense.date);
+        months.add(date.toISOString().slice(0, 7));
+      });
+
+      if (months.size >= 2) {
+        insights.push({
+          type: 'monthly_comparison',
+          message:
+            'Your spending data spans multiple months, check the monthly trends for detailed analysis',
+        });
+      }
+    }
+
     return insights;
   }
 
+  /**
+   * Updates expense split status
+   * @param userId User ID
+   * @param expenseId Expense ID
+   * @param isSplit Split status
+   * @returns Updated expense
+   */
   async updateExpenseSplitStatus(
     userId: string,
     expenseId: string,
     isSplit: boolean
   ): Promise<ExpenseResponse> {
-    const expenseRef = db.collection('expenses').doc(expenseId);
-    const expense = await expenseRef.get();
+    try {
+      const expenseRef = db.collection('expenses').doc(expenseId);
+      const expense = await expenseRef.get();
 
-    if (!expense.exists) {
-      throw new NotFoundError('Expense not found');
+      if (!expense.exists) {
+        throw new NotFoundError('Expense not found');
+      }
+
+      const expenseData = expense.data();
+      if (!expenseData || expenseData.userId !== userId) {
+        throw new AuthorizationError('Unauthorized access');
+      }
+
+      const updateData = {
+        isSplit,
+        updatedAt: Timestamp.now(),
+      };
+
+      await expenseRef.update(updateData);
+
+      const updatedExpense = await expenseRef.get();
+      const updatedData = updatedExpense.data();
+
+      if (!updatedData) {
+        throw new NotFoundError('Updated expense not found');
+      }
+
+      return {
+        id: expense.id,
+        ...updatedData,
+        createdAt: updatedData.createdAt?.toDate() || new Date(),
+        updatedAt: updatedData.updatedAt?.toDate() || new Date(),
+        date:
+          updatedData.date instanceof Timestamp
+            ? updatedData.date.toDate()
+            : new Date(updatedData.date),
+      } as unknown as ExpenseResponse;
+    } catch (error) {
+      if (error instanceof NotFoundError || error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AppError(
+        'Failed to update expense split status',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
     }
-
-    const expenseData = expense.data();
-    if (!expenseData || expenseData.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    const updateData = {
-      isSplit,
-      updatedAt: Timestamp.now(),
-    };
-
-    await expenseRef.update(updateData);
-
-    return {
-      id: expense.id,
-      ...expenseData,
-      ...updateData,
-      createdAt: expenseData.createdAt.toDate(),
-      updatedAt: updateData.updatedAt.toDate(),
-      date: expenseData.date instanceof Date ? expenseData.date : new Date(expenseData.date),
-    } as unknown as ExpenseResponse;
   }
 
+  /**
+   * Gets expense summary
+   * @param userId User ID
+   * @param query Filter query
+   * @returns Expense summary
+   */
   async getExpenseSummary(
     userId: string,
     query: { startDate?: Date; endDate?: Date } = {}
   ): Promise<ExpenseSummary> {
-    const expenses = await this.getExpensesByUserId(userId, query);
-    const amounts = expenses.map((expense) => expense.amount);
+    try {
+      const expenses = await this.getExpensesByUserId(userId, query);
+      const amounts = expenses.map((expense) => expense.amount);
 
-    return {
-      total: amounts.reduce((sum, amount) => sum + amount, 0),
-      count: expenses.length,
-      average:
-        amounts.length > 0 ? amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length : 0,
-      min: amounts.length > 0 ? Math.min(...amounts) : 0,
-      max: amounts.length > 0 ? Math.max(...amounts) : 0,
-    };
+      return {
+        total: amounts.reduce((sum, amount) => sum + amount, 0),
+        count: expenses.length,
+        average:
+          amounts.length > 0
+            ? amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length
+            : 0,
+        min: amounts.length > 0 ? Math.min(...amounts) : 0,
+        max: amounts.length > 0 ? Math.max(...amounts) : 0,
+      };
+    } catch (error) {
+      throw new AppError(
+        'Failed to get expense summary',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
   }
 
+  /**
+   * Gets category statistics
+   * @param userId User ID
+   * @param query Filter query
+   * @returns Category statistics
+   */
   async getCategoryStats(
     userId: string,
     query: { startDate?: Date; endDate?: Date } = {}
   ): Promise<CategoryStats> {
-    const expenses = await this.getExpensesByUserId(userId, query);
-    const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    try {
+      const expenses = await this.getExpensesByUserId(userId, query);
+      const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
-    const categoryStats: CategoryStats = {};
-    expenses.forEach((expense) => {
-      const category = expense.category;
-      if (!categoryStats[category]) {
-        categoryStats[category] = {
-          total: 0,
-          count: 0,
-          average: 0,
-          percentage: 0,
-        };
+      if (total === 0) {
+        return {};
       }
 
-      categoryStats[category].total += expense.amount;
-      categoryStats[category].count += 1;
-      categoryStats[category].average =
-        categoryStats[category].total / categoryStats[category].count;
-      categoryStats[category].percentage = (categoryStats[category].total / total) * 100;
-    });
+      const categoryStats: CategoryStats = {};
+      expenses.forEach((expense) => {
+        const category = expense.category || 'other';
+        if (!categoryStats[category]) {
+          categoryStats[category] = {
+            total: 0,
+            count: 0,
+            average: 0,
+            percentage: 0,
+          };
+        }
 
-    return categoryStats;
+        categoryStats[category].total += expense.amount;
+        categoryStats[category].count += 1;
+        categoryStats[category].average =
+          categoryStats[category].total / categoryStats[category].count;
+        categoryStats[category].percentage = (categoryStats[category].total / total) * 100;
+      });
+
+      return categoryStats;
+    } catch (error) {
+      throw new AppError(
+        'Failed to get category statistics',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
   }
 
+  /**
+   * Gets expense trends
+   * @param userId User ID
+   * @param interval Interval (daily, weekly, monthly)
+   * @returns Expense trends
+   */
   async getExpenseTrends(
     userId: string,
     interval: 'daily' | 'weekly' | 'monthly' = 'monthly'
   ): Promise<ExpenseTrends> {
-    const expenses = await this.getExpensesByUserId(userId);
-    const trends: ExpenseTrends = {
-      total: 0,
-      count: 0,
-      byCategory: {},
-      byDate: {},
-    };
+    try {
+      const expenses = await this.getExpensesByUserId(userId);
+      const trends: ExpenseTrends = {
+        total: 0,
+        count: 0,
+        byCategory: {},
+        byDate: {},
+      };
 
-    expenses.forEach((expense) => {
-      const amount = expense.amount;
-      const category = expense.category || 'Uncategorized';
-      const date = expense.date instanceof Date ? expense.date : new Date(expense.date);
+      for (const expense of expenses) {
+        const amount = expense.amount;
+        const category = expense.category || 'other';
+        const date = expense.date instanceof Date ? expense.date : new Date(expense.date);
 
-      // Update totals
-      trends.total += amount;
-      trends.count += 1;
+        // Skip invalid dates
+        if (isNaN(date.getTime())) {
+          continue;
+        }
 
-      // Update category totals
-      if (!trends.byCategory[category]) {
-        trends.byCategory[category] = { total: 0, count: 0 };
+        // Update totals
+        trends.total += amount;
+        trends.count += 1;
+
+        // Update category totals
+        if (!trends.byCategory[category]) {
+          trends.byCategory[category] = { total: 0, count: 0 };
+        }
+
+        // Non-null assertion is safe here because we just checked/initialized it
+        const categoryData = trends.byCategory[category];
+        if (categoryData) {
+          categoryData.total += amount;
+          categoryData.count += 1;
+        }
+
+        // Generate key based on interval
+        let key = '';
+
+        switch (interval) {
+          case 'daily': {
+            const dailyKey = date.toISOString().split('T')[0];
+            if (dailyKey) key = dailyKey;
+            break;
+          }
+          case 'weekly': {
+            const weekStart = new Date(date);
+            weekStart.setDate(date.getDate() - date.getDay());
+            const weeklyKey = weekStart.toISOString().split('T')[0];
+            if (weeklyKey) key = weeklyKey;
+            break;
+          }
+          case 'monthly':
+          default: {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            key = `${year}-${month}`;
+            break;
+          }
+        }
+
+        // Skip if key is empty
+        if (!key) continue;
+
+        // Update date totals
+        if (!trends.byDate[key]) {
+          trends.byDate[key] = { total: 0, count: 0 };
+        }
+
+        // Access safely with explicit check
+        const dateData = trends.byDate[key];
+        if (dateData) {
+          dateData.total += amount;
+          dateData.count += 1;
+        }
       }
-      trends.byCategory[category].total += amount;
-      trends.byCategory[category].count += 1;
 
-      // Generate key based on interval
-      let key: string;
-      switch (interval) {
-        case 'daily':
-          key = date.toISOString().split('T')[0] || '';
-          break;
-        case 'weekly':
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay());
-          key = weekStart.toISOString().split('T')[0] || '';
-          break;
-        case 'monthly':
-        default:
-          key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      }
-
-      // Update date totals
-      if (!trends.byDate[key]) {
-        trends.byDate[key] = { total: 0, count: 0 };
-      }
-      const dateEntry = trends.byDate[key];
-      if (dateEntry) {
-        dateEntry.total += amount;
-        dateEntry.count += 1;
-      }
-    });
-
-    return trends;
+      return trends;
+    } catch (error) {
+      throw new AppError(
+        'Failed to get expense trends',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
   }
 }

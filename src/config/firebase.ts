@@ -10,6 +10,11 @@ config();
 
 let firebaseApp: admin.app.App;
 
+/**
+ * Initialize Firebase Admin SDK
+ * This function initializes Firebase Admin SDK with credentials from environment variables.
+ * If Firebase Admin is already initialized, it uses the existing instance.
+ */
 try {
   // Check if Firebase is already initialized
   if (admin.apps.length === 0) {
@@ -33,29 +38,38 @@ try {
   }
 } catch (error) {
   logger.error('Failed to initialize Firebase Admin:', error);
-  throw error;
+  // Use a more descriptive error message
+  if (error instanceof Error) {
+    logger.error(`Error details: ${error.message}`);
+  }
+  throw new Error(
+    'Firebase initialization failed. Check your environment variables and credentials.'
+  );
 }
 
 // Export Firebase services
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
-// Test database connection
-db.collection('test')
-  .doc('test')
-  .get()
-  .then(() => {
-    console.log('Successfully connected to Firestore');
-  })
-  .catch((error) => {
-    console.error('Error connecting to Firestore:', error);
-    console.error('Error details:', {
-      code: error.code,
-      message: error.message,
-      stack: error.stack,
-    });
-    throw error;
-  });
+// Validate Firebase connection asynchronously without blocking server startup
+(async () => {
+  try {
+    // Simple read operation to validate connection without creating test documents
+    await db.collection('_connection_test_').limit(1).get();
+    logger.info('Successfully connected to Firestore');
+  } catch (error) {
+    logger.error('Error connecting to Firestore:');
+    if (error instanceof Error) {
+      logger.error(`Code: ${(error as any).code || 'N/A'}`);
+      logger.error(`Message: ${error.message}`);
+      logger.error(`Stack: ${error.stack}`);
+    } else {
+      logger.error(`Unknown error: ${String(error)}`);
+    }
+    // Don't throw here to prevent crashing the app during startup
+    // Connection issues will be handled by request handlers
+  }
+})();
 
 // Export Firebase app instance
 export const firebaseAdmin = admin;

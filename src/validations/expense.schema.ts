@@ -6,7 +6,7 @@ export const expenseSchema = {
     category: Joi.string().required().trim(),
     description: Joi.string().trim().max(500),
     date: Joi.date().required().iso(),
-    currency: Joi.string().trim().uppercase().default('USD'),
+    currency: Joi.string().trim().uppercase().default('INR'),
     isRecurring: Joi.boolean().default(false),
     recurringFrequency: Joi.string()
       .valid('daily', 'weekly', 'monthly', 'yearly')

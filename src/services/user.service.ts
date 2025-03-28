@@ -77,7 +77,7 @@ export class UserService extends BaseService {
 
       // Default user preferences
       const defaultPreferences = {
-        currency: 'USD',
+        currency: 'INR',
         language: 'en',
         notifications: {
           email: true,
