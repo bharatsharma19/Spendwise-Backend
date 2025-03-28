@@ -50,7 +50,7 @@ export const validate = (schema: Joi.ObjectSchema) => {
   }
   const cachedSchema = schemaCache.get(schemaKey)!;
 
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     try {
       const { error, value } = cachedSchema.validate(req.body, {
         abortEarly: false, // Return all errors, not just the first one

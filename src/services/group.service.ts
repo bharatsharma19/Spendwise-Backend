@@ -9,8 +9,6 @@ import {
 } from '../models/group.model';
 import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
 import { Timestamp } from 'firebase-admin/firestore';
-import { UserService } from './user.service';
-import { ExpenseService } from './expense.service';
 import { NotificationService } from './notification.service';
 import { BaseService } from './base.service';
 import {
@@ -18,6 +16,7 @@ import {
   GroupExpenseResponse,
   GroupSettlementResponse,
 } from '../models/response.model';
+import { NotFoundError } from '../utils/error';
 
 export class GroupService extends BaseService {
   private static instance: GroupService;
@@ -25,8 +24,6 @@ export class GroupService extends BaseService {
 
   private constructor() {
     super('groups');
-    this.userService = UserService.getInstance();
-    this.expenseService = ExpenseService.getInstance();
     this.notificationService = NotificationService.getInstance();
   }
 
@@ -35,10 +32,6 @@ export class GroupService extends BaseService {
       GroupService.instance = new GroupService();
     }
     return GroupService.instance;
-  }
-
-  private generateGroupCode(): string {
-    return Math.random().toString(36).substring(2, 10).toUpperCase();
   }
 
   public async createGroup(
@@ -161,50 +154,46 @@ export class GroupService extends BaseService {
     expenseId: string,
     userId: string
   ): Promise<GroupExpense> {
-    try {
-      const expense = await this.getSubCollection<GroupExpense>(groupId, 'expenses', [
-        { field: 'id', operator: '==', value: expenseId },
-      ]).then((expenses) => expenses[0]);
+    const group = await this.getDocument<Group>(groupId);
+    const expenses = await this.getSubCollection<GroupExpense>(groupId, 'expenses', [
+      { field: 'id', operator: '==', value: expenseId },
+    ]);
 
-      if (!expense) {
-        throw new AppError('Expense not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
-      }
+    if (!expenses || expenses.length === 0) {
+      throw new AppError('Expense not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
+    }
 
-      const updatedSplits = expense.splits.map((split) =>
-        split.userId === userId
-          ? { ...split, status: 'paid' as const, paidAt: Timestamp.now() }
-          : split
-      );
+    const expense = expenses[0];
+    if (!expense) {
+      throw new AppError('Expense not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
+    }
 
-      const updatedExpense = await this.updateSubCollectionDocument<GroupExpense>(
+    const updatedSplits = expense.splits.map((split: ExpenseSplit) =>
+      split.userId === userId
+        ? { ...split, status: 'paid' as const, paidAt: Timestamp.now() }
+        : split
+    );
+
+    const updatedExpense = await this.updateSubCollectionDocument<GroupExpense>(
+      groupId,
+      'expenses',
+      expenseId,
+      { splits: updatedSplits }
+    );
+
+    // Check if all splits are paid
+    if (updatedExpense.splits.every((split) => split.status === 'paid')) {
+      await this.notificationService.createExpensePaidNotification(
+        updatedExpense.paidBy,
         groupId,
-        'expenses',
+        group.name,
         expenseId,
-        { splits: updatedSplits }
-      );
-
-      // Check if all splits are paid
-      if (updatedExpense.splits.every((split) => split.status === 'paid')) {
-        const group = await this.getDocument<Group>(groupId);
-        await this.notificationService.createExpensePaidNotification(
-          expense.paidBy,
-          groupId,
-          group.name,
-          expenseId,
-          expense.amount,
-          expense.currency
-        );
-      }
-
-      return updatedExpense;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError(
-        'Failed to mark expense as paid',
-        HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
+        updatedExpense.amount,
+        updatedExpense.currency
       );
     }
+
+    return updatedExpense;
   }
 
   public async settleGroup(groupId: string): Promise<GroupSettlement> {
@@ -310,7 +299,6 @@ export class GroupService extends BaseService {
     expenseByCategory: Record<string, number>;
   }> {
     try {
-      const group = await this.getDocument<Group>(groupId);
       const expenses = await this.getSubCollection<GroupExpense>(groupId, 'expenses');
       const settlements = await this.getSubCollection<GroupSettlement>(groupId, 'settlements');
 
@@ -388,5 +376,40 @@ export class GroupService extends BaseService {
       createdAt: settlement.createdAt.toDate(),
       updatedAt: settlement.updatedAt.toDate(),
     };
+  }
+
+  public async getGroup(groupId: string): Promise<GroupResponse> {
+    const groupDoc = await this.getDocument<Group>(groupId);
+    return this.transformGroupResponse(groupDoc);
+  }
+
+  public async getGroupMember(groupId: string, memberId: string): Promise<GroupMemberResponse> {
+    const group = await this.getDocument<Group>(groupId);
+    const member = group.members.find((m) => m.id === memberId);
+    if (!member) {
+      throw new NotFoundError('Group member not found');
+    }
+    return this.transformGroupMemberResponse(member);
+  }
+
+  public async getGroupExpense(groupId: string, expenseId: string): Promise<GroupExpenseResponse> {
+    const group = await this.getDocument<Group>(groupId);
+    const expense = group.expenses.find((e) => e.id === expenseId);
+    if (!expense) {
+      throw new NotFoundError('Group expense not found');
+    }
+    return this.transformGroupExpenseResponse(expense);
+  }
+
+  public async getGroupSettlement(
+    groupId: string,
+    settlementId: string
+  ): Promise<GroupSettlementResponse> {
+    const group = await this.getDocument<Group>(groupId);
+    const settlement = group.settlements.find((s) => s.id === settlementId);
+    if (!settlement) {
+      throw new NotFoundError('Group settlement not found');
+    }
+    return this.transformGroupSettlementResponse(settlement);
   }
 }

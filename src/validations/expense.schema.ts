@@ -1,5 +1,4 @@
 import Joi from 'joi';
-import { VALIDATION_CONSTANTS } from '../middleware/validate';
 
 export const expenseSchema = {
   createExpense: Joi.object({

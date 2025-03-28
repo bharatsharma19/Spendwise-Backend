@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { GroupService } from '../services/group.service';
 import { AppError, ValidationError, HttpStatusCode, ErrorType } from '../utils/error';
 import { AuthRequest } from '../middleware/auth';
@@ -169,7 +169,6 @@ export class GroupController {
   public settleGroup = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
-      const userId = req.user!.uid;
 
       const { groupId } = req.params;
       if (!groupId) {
@@ -189,7 +188,6 @@ export class GroupController {
   public getGroupAnalytics = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
-      const userId = req.user!.uid;
 
       const { groupId } = req.params;
       if (!groupId) {

@@ -1,5 +1,5 @@
 import { BaseService } from './base.service';
-import { Notification, NotificationType } from '../models/notification.model';
+import { Notification } from '../models/notification.model';
 import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
 import { db } from '../config/firebase';
 import { Timestamp } from 'firebase-admin/firestore';

@@ -3,7 +3,6 @@ import { ExpenseService } from '../services/expense.service';
 import { ValidationError, AppError, HttpStatusCode, ErrorType } from '../utils/error';
 import { AuthRequest } from '../middleware/auth';
 import { expenseSchema } from '../validations/expense.schema';
-import { logger } from '../utils/logger';
 import { User } from '../models/user.model';
 
 const expenseService = ExpenseService.getInstance();
@@ -229,12 +228,11 @@ export class ExpenseController {
     try {
       this.validateUser(req);
 
-      const { startDate, endDate, interval } = req.query;
-      const trends = await expenseService.getExpenseTrends(req.user.uid, {
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-        interval: interval as 'daily' | 'weekly' | 'monthly' | undefined,
-      });
+      const { interval } = req.query;
+      const trends = await expenseService.getExpenseTrends(
+        req.user.uid,
+        interval as 'daily' | 'weekly' | 'monthly' | undefined
+      );
 
       res.json({
         status: 'success',

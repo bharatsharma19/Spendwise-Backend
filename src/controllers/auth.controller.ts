@@ -10,7 +10,6 @@ import { TwilioService } from '../services/twilio.service';
 import { authSchema } from '../validations/auth.schema';
 import { env } from '../config/env.config';
 import { logger } from '../utils/logger';
-import { UserRecord } from 'firebase-admin/auth';
 import { User } from '../models/user.model';
 
 const authService = AuthService.getInstance();

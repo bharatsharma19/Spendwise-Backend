@@ -4,7 +4,7 @@ import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
 import { Timestamp, WhereFilterOp } from 'firebase-admin/firestore';
 import { BaseService } from './base.service';
 import { db } from '../config/firebase';
-import { ValidationError, NotFoundError, AuthorizationError } from '../utils/error';
+import { NotFoundError, AuthorizationError } from '../utils/error';
 
 interface UserProfile {
   displayName?: string;
@@ -39,17 +39,6 @@ interface UserSettings {
     biometricAuth?: boolean;
     loginNotifications?: boolean;
   };
-}
-
-interface Notification {
-  id: string;
-  userId: string;
-  type: string;
-  title: string;
-  message: string;
-  read: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
 }
 
 interface UserStats {
