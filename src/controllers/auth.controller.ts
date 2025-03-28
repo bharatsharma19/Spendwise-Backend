@@ -271,10 +271,14 @@ export class AuthController {
       }
 
       const { phoneNumber } = value;
-      const result = await twilioService.sendVerificationCode(phoneNumber);
+      // Format phone number to E.164 format if needed
+      const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+
+      const result = await twilioService.sendOTP(formattedPhoneNumber);
 
       res.json({
         status: 'success',
+        message: 'OTP sent successfully',
         data: result,
       });
     } catch (error) {
@@ -290,13 +294,16 @@ export class AuthController {
       }
 
       const { phoneNumber, code } = value;
-      const result = await twilioService.verifyCode(phoneNumber, code);
+      // Format phone number to E.164 format if needed
+      const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+
+      const result = await twilioService.verifyOTP(formattedPhoneNumber, code);
 
       if (result) {
         // Update user's phone verification status
         const userQuery = await db
           .collection('users')
-          .where('phoneNumber', '==', phoneNumber)
+          .where('phoneNumber', '==', formattedPhoneNumber)
           .limit(1)
           .get();
 
@@ -309,10 +316,17 @@ export class AuthController {
             });
           }
         }
+      } else {
+        throw new AppError(
+          'Invalid or expired OTP',
+          HttpStatusCode.BAD_REQUEST,
+          ErrorType.VALIDATION
+        );
       }
 
       res.json({
         status: 'success',
+        message: 'Phone number verified successfully',
         data: result,
       });
     } catch (error) {

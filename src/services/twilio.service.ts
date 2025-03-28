@@ -5,15 +5,10 @@ import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
 export class TwilioService {
   private static instance: TwilioService;
   private client: twilio.Twilio;
-  private verifyServiceId: string;
+  private otpCache: Map<string, { code: string; expiresAt: number }> = new Map();
 
   private constructor() {
-    if (
-      !env.TWILIO_ACCOUNT_SID ||
-      !env.TWILIO_AUTH_TOKEN ||
-      !env.TWILIO_VERIFY_SERVICE_ID ||
-      !env.TWILIO_PHONE_NUMBER
-    ) {
+    if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) {
       throw new AppError(
         'Missing required Twilio configuration',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -22,7 +17,6 @@ export class TwilioService {
     }
 
     this.client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
-    this.verifyServiceId = env.TWILIO_VERIFY_SERVICE_ID;
   }
 
   public static getInstance(): TwilioService {
@@ -32,59 +26,52 @@ export class TwilioService {
     return TwilioService.instance;
   }
 
-  public async sendVerificationCode(phoneNumber: string): Promise<boolean> {
+  public async sendOTP(phoneNumber: string): Promise<boolean> {
     try {
-      const verification = await this.client.verify.v2
-        .services(this.verifyServiceId)
-        .verifications.create({
-          to: phoneNumber,
-          channel: 'sms',
-        });
-      return verification.status === 'pending';
-    } catch (error: any) {
-      console.error('Error sending verification code:', error);
-      throw new AppError(
-        error.message || 'Failed to send verification code',
-        error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
-    }
-  }
+      // Generate a 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  public async verifyCode(phoneNumber: string, code: string): Promise<boolean> {
-    try {
-      const verification = await this.client.verify.v2
-        .services(this.verifyServiceId)
-        .verificationChecks.create({
-          to: phoneNumber,
-          code,
-        });
-      return verification.status === 'approved';
-    } catch (error: any) {
-      console.error('Error verifying code:', error);
-      throw new AppError(
-        error.message || 'Failed to verify code',
-        error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
-    }
-  }
+      // Create message
+      const message = `Your verification code is ${otp}. This code will expire in 5 minutes.`;
 
-  public async sendSMS(to: string, message: string): Promise<boolean> {
-    try {
+      // Send SMS
       const result = await this.client.messages.create({
         body: message,
-        to,
+        to: phoneNumber,
         from: env.TWILIO_PHONE_NUMBER,
       });
-      return result.status === 'queued';
+
+      // Cache the OTP with an expiration
+      this.otpCache.set(phoneNumber, {
+        code: otp,
+        expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes from now
+      });
+
+      return result.status === 'queued' || result.status === 'sent';
     } catch (error: any) {
-      console.error('Error sending SMS:', error);
+      console.error('Error sending OTP:', error);
       throw new AppError(
-        error.message || 'Failed to send SMS',
+        error.message || 'Failed to send OTP',
         error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
         ErrorType.DATABASE
       );
     }
+  }
+
+  public verifyOTP(phoneNumber: string, code: string): boolean {
+    const otpData = this.otpCache.get(phoneNumber);
+
+    // Check if OTP exists and is not expired
+    if (!otpData || Date.now() > otpData.expiresAt) {
+      return false;
+    }
+
+    // Check if codes match
+    const isValid = otpData.code === code;
+
+    // Remove OTP after verification attempt
+    this.otpCache.delete(phoneNumber);
+
+    return isValid;
   }
 }

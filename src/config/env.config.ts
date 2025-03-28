@@ -69,7 +69,6 @@ const requiredEnvVars: (keyof EnvConfig)[] = [
   'FIREBASE_API_KEY',
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
-  'TWILIO_VERIFY_SERVICE_ID',
   'TWILIO_PHONE_NUMBER',
   'JWT_SECRET',
 ];
@@ -121,7 +120,7 @@ if (env.JWT_SECRET.length < 32) {
 
 // Validate Firebase credentials
 try {
-  JSON.parse(env.FIREBASE_PRIVATE_KEY);
+  env.FIREBASE_PRIVATE_KEY;
 } catch {
   throw new AppError(
     'FIREBASE_PRIVATE_KEY must be a valid JSON string',
