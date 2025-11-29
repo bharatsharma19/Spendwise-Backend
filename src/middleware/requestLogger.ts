@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger';
 
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
@@ -12,6 +12,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
     const contentLength = res.get('content-length');
 
     logger.info('HTTP Request', {
+      correlationId: req.headers['x-correlation-id'],
       method,
       url: originalUrl,
       status: statusCode,

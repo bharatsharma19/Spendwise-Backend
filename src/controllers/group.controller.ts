@@ -1,10 +1,10 @@
-import { Response, NextFunction } from 'express';
-import { GroupService } from '../services/group.service';
-import { AppError, ValidationError, HttpStatusCode, ErrorType } from '../utils/error';
-import { AuthRequest } from '../middleware/auth';
+import { NextFunction, Response } from 'express';
 import { Timestamp } from 'firebase-admin/firestore';
-import { groupSchema } from '../validations/group.schema';
+import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
+import { GroupService } from '../services/group.service';
+import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
+import { groupSchema } from '../validations/group.schema';
 
 type AuthenticatedRequest = Omit<AuthRequest, 'user'> & {
   user: Required<Pick<User, 'uid'>> & Omit<User, 'uid'>;
@@ -175,7 +175,7 @@ export class GroupController {
         this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
       }
 
-      const settlement = await this.groupService.settleGroup(groupId);
+      const settlement = await this.groupService.settleGroup(groupId, req.user!.uid);
       res.json({
         status: 'success',
         data: settlement,
@@ -194,7 +194,7 @@ export class GroupController {
         this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
       }
 
-      const analytics = await this.groupService.getGroupAnalytics(groupId);
+      const analytics = await this.groupService.getGroupAnalytics(groupId, req.user!.uid);
       res.json({
         status: 'success',
         data: analytics,

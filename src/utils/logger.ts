@@ -12,9 +12,18 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf(({ timestamp, level, message, metadata }) => {
-    let msg = `${timestamp} [${level}]: ${message}`;
-    if (Object.keys(metadata as Record<string, unknown>).length > 0) {
-      msg += ` ${JSON.stringify(metadata)}`;
+    let msg = `${timestamp} [${level}]`;
+    const meta = metadata as Record<string, unknown>;
+
+    if (meta.correlationId) {
+      msg += ` [${meta.correlationId}]`;
+      delete meta.correlationId;
+    }
+
+    msg += `: ${message}`;
+
+    if (Object.keys(meta).length > 0) {
+      msg += ` ${JSON.stringify(meta)}`;
     }
     return msg;
   })

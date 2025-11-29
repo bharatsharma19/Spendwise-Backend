@@ -1,18 +1,16 @@
-import { Request, Response, NextFunction } from 'express';
-import { ValidationError, AppError, HttpStatusCode, ErrorType } from '../utils/error';
-import { auth } from '../config/firebase';
-import { db } from '../config/firebase';
-import { AuthRequest } from '../middleware/auth';
-import { AuthService } from '../services/auth.service';
+import { NextFunction, Request, Response } from 'express';
 import { Timestamp } from 'firebase-admin/firestore';
-import { EmailService } from '../services/email.service';
-import { TwilioService } from '../services/twilio.service';
-import { authSchema } from '../validations/auth.schema';
 import { env } from '../config/env.config';
-import { logger } from '../utils/logger';
+import { auth, db } from '../config/firebase';
+import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
 
-const authService = AuthService.getInstance();
+import { EmailService } from '../services/email.service';
+import { TwilioService } from '../services/twilio.service';
+import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
+import { logger } from '../utils/logger';
+import { authSchema } from '../validations/auth.schema';
+
 const emailService = EmailService.getInstance();
 const twilioService = TwilioService.getInstance();
 
@@ -36,6 +34,7 @@ export class AuthController {
   }
 
   public register = async (req: Request, res: Response, next: NextFunction) => {
+    let userRecord;
     try {
       const { error, value } = authSchema.register.validate(req.body);
       if (error) {
@@ -48,7 +47,7 @@ export class AuthController {
       const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
       // Create user in Firebase Auth
-      const userRecord = await auth.createUser({
+      userRecord = await auth.createUser({
         email,
         password,
         phoneNumber: formattedPhoneNumber,
@@ -91,7 +90,18 @@ export class AuthController {
         status: 'active',
       };
 
-      await db.collection('users').doc(userRecord.uid).set(userData);
+      // ATOMIC OPERATION: Try to write to Firestore. If it fails, rollback Auth user.
+      try {
+        await db.collection('users').doc(userRecord.uid).set(userData);
+      } catch (firestoreError) {
+        logger.error('Firestore creation failed, rolling back Auth user:', firestoreError);
+        await auth.deleteUser(userRecord.uid);
+        throw new AppError(
+          'Failed to create user profile. Please try again.',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
+      }
 
       // Send email verification
       await this.sendEmailVerification(userRecord.uid);
@@ -140,52 +150,16 @@ export class AuthController {
     }
   };
 
-  public login = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { error, value } = authSchema.login.validate(req.body);
-      if (error) {
-        this.handleValidationError(error);
-      }
-
-      const { email, password } = value;
-
-      // Sign in with email and password
-      const { customToken, uid } = await authService.signInWithEmailAndPassword(email, password);
-
-      // Get user profile from Firestore
-      const userDoc = await db.collection('users').doc(uid).get();
-      const userData = userDoc.data() as User | undefined;
-
-      if (!userData) {
-        throw new AppError('User profile not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
-      }
-
-      if (!userData.isEmailVerified) {
-        throw new AppError(
-          'Please verify your email before logging in',
-          HttpStatusCode.FORBIDDEN,
-          ErrorType.AUTHENTICATION
-        );
-      }
-
-      // if (!userData.isPhoneVerified) {
-      //   throw new AppError(
-      //     'Please verify your phone number before logging in',
-      //     HttpStatusCode.FORBIDDEN,
-      //     ErrorType.AUTHENTICATION
-      //   );
-      // }
-
-      res.json({
-        status: 'success',
-        data: {
-          token: customToken,
-          user: userData,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
+  public login = async (_req: Request, _res: Response, next: NextFunction) => {
+    // DEPRECATED: Server-side login is insecure and not recommended.
+    // The frontend should handle login via Firebase SDK and send the ID token.
+    next(
+      new AppError(
+        'Server-side login is deprecated. Please use client-side Firebase SDK to login and provide the ID token in the Authorization header.',
+        HttpStatusCode.GONE, // 410 Gone indicates the resource is no longer available
+        ErrorType.VALIDATION
+      )
+    );
   };
 
   public sendEmailVerification = async (uid: string) => {

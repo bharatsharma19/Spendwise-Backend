@@ -21,6 +21,7 @@
   "dependencies": {
     "@types/express-rate-limit": "^5.1.3",
     "@types/nodemailer": "^6.4.17",
+    "@types/uuid": "^10.0.0",
     "axios": "^1.8.4",
     "compression": "^1.8.0",
     "cors": "^2.8.5",
@@ -32,7 +33,8 @@
     "joi": "^17.12.1",
     "morgan": "^1.10.0",
     "nodemailer": "^6.10.0",
-    "twilio": "^4.20.0"
+    "twilio": "^4.20.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/compression": "^1.7.5",

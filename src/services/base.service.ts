@@ -1,6 +1,15 @@
+import { DocumentData, Query, Timestamp } from 'firebase-admin/firestore';
 import { db } from '../config/firebase';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
-import { Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
+import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
+
+export interface QueryOptions {
+  limit?: number;
+  offset?: number; // Note: In Firestore, using a cursor (startAfter) is better for performance, but offset works for smaller sets
+  orderBy?: {
+    field: string;
+    direction: 'asc' | 'desc';
+  };
+}
 
 export abstract class BaseService {
   protected readonly collection: string;
@@ -22,6 +31,7 @@ export abstract class BaseService {
       return { id: doc.id, ...doc.data() } as T;
     } catch (error) {
       if (error instanceof AppError) throw error;
+      console.error(`Error getting document from ${this.collection}:`, error);
       throw new AppError(
         `Failed to get ${this.collection}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -39,6 +49,7 @@ export abstract class BaseService {
       });
       return { id: docRef.id, ...data } as T;
     } catch (error) {
+      console.error(`Error creating document in ${this.collection}:`, error);
       throw new AppError(
         `Failed to create ${this.collection}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -54,9 +65,11 @@ export abstract class BaseService {
         ...data,
         updatedAt: Timestamp.now(),
       });
+      // Re-fetch to return complete object
       return this.getDocument<T>(id);
     } catch (error) {
       if (error instanceof AppError) throw error;
+      console.error(`Error updating document in ${this.collection}:`, error);
       throw new AppError(
         `Failed to update ${this.collection}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -70,6 +83,7 @@ export abstract class BaseService {
       const docRef = db.collection(this.collection).doc(id);
       await docRef.delete();
     } catch (error) {
+      console.error(`Error deleting document from ${this.collection}:`, error);
       throw new AppError(
         `Failed to delete ${this.collection}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -78,21 +92,40 @@ export abstract class BaseService {
     }
   }
 
+  // UPDATED: Added pagination and sorting options
   protected async getCollection<T>(
-    query: {
+    filters: {
       field: string;
       operator: FirebaseFirestore.WhereFilterOp;
       value: any;
-    }[] = []
+    }[] = [],
+    options?: QueryOptions
   ): Promise<T[]> {
     try {
       let ref: Query<DocumentData> = db.collection(this.collection);
-      query.forEach(({ field, operator, value }) => {
+
+      filters.forEach(({ field, operator, value }) => {
         ref = ref.where(field, operator, value);
       });
+
+      if (options?.orderBy) {
+        ref = ref.orderBy(options.orderBy.field, options.orderBy.direction);
+      } else {
+        // Default sort by createdAt if available, otherwise strictly required for pagination consistency
+        // We check if the collection might have createdAt, but since we can't know for sure at runtime without schema,
+        // we'll assume it's safe or the caller should provide orderBy.
+        // Ideally, we should have a consistent field.
+        ref = ref.orderBy('createdAt', 'desc');
+      }
+
+      if (options?.offset) ref = ref.offset(options.offset);
+      if (options?.limit) ref = ref.limit(options.limit);
+
       const snapshot = await ref.get();
       return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as T[];
     } catch (error) {
+      // Log the specific error for debugging
+      console.error(`Firestore Query Error in ${this.collection}:`, error);
       throw new AppError(
         `Failed to get ${this.collection} collection`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -104,23 +137,36 @@ export abstract class BaseService {
   protected async getSubCollection<T>(
     parentId: string,
     subCollection: string,
-    query: {
+    filters: {
       field: string;
       operator: FirebaseFirestore.WhereFilterOp;
       value: any;
-    }[] = []
+    }[] = [],
+    options?: QueryOptions
   ): Promise<T[]> {
     try {
       let ref: Query<DocumentData> = db
         .collection(this.collection)
         .doc(parentId)
         .collection(subCollection);
-      query.forEach(({ field, operator, value }) => {
+
+      filters.forEach(({ field, operator, value }) => {
         ref = ref.where(field, operator, value);
       });
+
+      if (options?.orderBy) {
+        ref = ref.orderBy(options.orderBy.field, options.orderBy.direction);
+      } else {
+        ref = ref.orderBy('createdAt', 'desc');
+      }
+
+      if (options?.offset) ref = ref.offset(options.offset);
+      if (options?.limit) ref = ref.limit(options.limit);
+
       const snapshot = await ref.get();
       return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as T[];
     } catch (error) {
+      console.error(`Error getting subcollection ${subCollection} in ${this.collection}:`, error);
       throw new AppError(
         `Failed to get ${subCollection} subcollection`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -146,6 +192,7 @@ export abstract class BaseService {
         });
       return { id: docRef.id, ...data } as T;
     } catch (error) {
+      console.error(`Error adding to subcollection ${subCollection} in ${this.collection}:`, error);
       throw new AppError(
         `Failed to add to ${subCollection} subcollection`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -166,36 +213,21 @@ export abstract class BaseService {
         .doc(parentId)
         .collection(subCollection)
         .doc(documentId);
+
       await docRef.update({
         ...data,
         updatedAt: Timestamp.now(),
       });
+
       const doc = await docRef.get();
       return { id: doc.id, ...doc.data() } as T;
     } catch (error) {
+      console.error(
+        `Error updating subcollection document ${subCollection} in ${this.collection}:`,
+        error
+      );
       throw new AppError(
         `Failed to update ${subCollection} document`,
-        HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
-    }
-  }
-
-  protected async deleteSubCollectionDocument(
-    parentId: string,
-    subCollection: string,
-    documentId: string
-  ): Promise<void> {
-    try {
-      await db
-        .collection(this.collection)
-        .doc(parentId)
-        .collection(subCollection)
-        .doc(documentId)
-        .delete();
-    } catch (error) {
-      throw new AppError(
-        `Failed to delete ${subCollection} document`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
         ErrorType.DATABASE
       );

@@ -1,17 +1,27 @@
-import express, { Application, Request, Response, NextFunction } from 'express';
+import compression from 'compression';
 import cors from 'cors';
+import express, { Application, NextFunction, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import { env } from './config/env.config';
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { requestLogger } from './middleware/requestLogger';
-import { env } from './config/env.config';
 import routes from './routes';
 import { logger } from './utils/logger';
 
+import { v4 as uuidv4 } from 'uuid';
+
 const app: Application = express();
+
+// Correlation ID Middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+  req.headers['x-correlation-id'] = correlationId;
+  res.setHeader('x-correlation-id', correlationId);
+  next();
+});
 
 // Security middleware
 app.use(

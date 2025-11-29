@@ -1,15 +1,20 @@
+import { Timestamp } from 'firebase-admin/firestore';
+import { db } from '../config/firebase';
 import {
   CreateExpenseDto,
-  ExpenseResponse,
   ExpenseAnalytics,
   ExpenseCategory,
+  ExpenseResponse,
   ExpenseTrends,
 } from '../models/expense.model';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
-import { Timestamp } from 'firebase-admin/firestore';
-import { BaseService } from './base.service';
-import { db } from '../config/firebase';
-import { NotFoundError, AuthorizationError } from '../utils/error';
+import {
+  AppError,
+  AuthorizationError,
+  ErrorType,
+  HttpStatusCode,
+  NotFoundError,
+} from '../utils/error';
+import { BaseService, QueryOptions } from './base.service';
 
 interface ExpenseData {
   amount: number;
@@ -142,43 +147,53 @@ export class ExpenseService extends BaseService {
   }
 
   /**
-   * Gets expenses by user ID with optional filtering
+   * Gets expenses by user ID with optional filtering and pagination
    * @param userId User ID
    * @param query Filter query
+   * @param options Pagination and sorting options
    * @returns List of expenses
    */
-  async getExpensesByUserId(userId: string, query: ExpenseQuery = {}): Promise<ExpenseResponse[]> {
+  async getExpensesByUserId(
+    userId: string,
+    query: ExpenseQuery = {},
+    options?: QueryOptions
+  ): Promise<ExpenseResponse[]> {
     try {
-      let expensesRef = db.collection('expenses').where('userId', '==', userId);
+      const filters: { field: string; operator: FirebaseFirestore.WhereFilterOp; value: any }[] = [
+        { field: 'userId', operator: '==', value: userId },
+      ];
 
       if (query.startDate) {
-        expensesRef = expensesRef.where('date', '>=', query.startDate);
+        filters.push({ field: 'date', operator: '>=', value: query.startDate });
       }
 
       if (query.endDate) {
-        expensesRef = expensesRef.where('date', '<=', query.endDate);
+        filters.push({ field: 'date', operator: '<=', value: query.endDate });
       }
 
       if (query.category) {
-        expensesRef = expensesRef.where('category', '==', query.category);
+        filters.push({ field: 'category', operator: '==', value: query.category });
       }
 
       if (query.isRecurring !== undefined) {
-        expensesRef = expensesRef.where('isRecurring', '==', query.isRecurring);
+        filters.push({ field: 'isRecurring', operator: '==', value: query.isRecurring });
       }
 
-      const snapshot = await expensesRef.orderBy('date', 'desc').get();
-      return snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-          date: data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date),
-        } as unknown as ExpenseResponse;
-      });
+      // Use default sort by date for expenses if not provided
+      const queryOptions: QueryOptions = options || {
+        orderBy: { field: 'date', direction: 'desc' },
+      };
+
+      const expenses = await this.getCollection<any>(filters, queryOptions);
+
+      return expenses.map((data) => ({
+        ...data,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        date: data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date),
+      })) as ExpenseResponse[];
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to get expenses',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -199,17 +214,31 @@ export class ExpenseService extends BaseService {
     id: string,
     data: Partial<ExpenseData>
   ): Promise<ExpenseResponse> {
-    try {
+    return db.runTransaction(async (transaction) => {
       const expenseRef = db.collection('expenses').doc(id);
-      const expense = await expenseRef.get();
+      const expenseDoc = await transaction.get(expenseRef);
 
-      if (!expense.exists) {
+      if (!expenseDoc.exists) {
         throw new NotFoundError('Expense not found');
       }
 
-      const expenseData = expense.data();
-      if (!expenseData || expenseData.userId !== userId) {
+      const currentData = expenseDoc.data();
+      if (!currentData || currentData.userId !== userId) {
         throw new AuthorizationError('Unauthorized access');
+      }
+
+      // Validate split consistency if changing split details
+      const isSplit = data.isSplit !== undefined ? data.isSplit : currentData.isSplit;
+      const amount = data.amount !== undefined ? data.amount : currentData.amount;
+      const splitAmount =
+        data.splitAmount !== undefined ? data.splitAmount : currentData.splitAmount;
+
+      if (isSplit && splitAmount > amount) {
+        throw new AppError(
+          'Split amount cannot be greater than total amount',
+          HttpStatusCode.BAD_REQUEST,
+          ErrorType.VALIDATION
+        );
       }
 
       const updateData = {
@@ -217,35 +246,25 @@ export class ExpenseService extends BaseService {
         updatedAt: Timestamp.now(),
       };
 
-      await expenseRef.update(updateData);
+      transaction.update(expenseRef, updateData);
 
-      const updatedExpense = await expenseRef.get();
-      const updatedData = updatedExpense.data();
-
-      if (!updatedData) {
-        throw new NotFoundError('Updated expense not found');
-      }
+      // Return updated data (optimistic)
+      const mergedData = { ...currentData, ...updateData } as ExpenseData & {
+        createdAt: Timestamp;
+        updatedAt: Timestamp;
+      };
 
       return {
-        id: expense.id,
-        ...updatedData,
-        createdAt: updatedData.createdAt?.toDate() || new Date(),
-        updatedAt: updatedData.updatedAt?.toDate() || new Date(),
+        id: expenseDoc.id,
+        ...mergedData,
+        createdAt: mergedData.createdAt?.toDate() || new Date(),
+        updatedAt: mergedData.updatedAt?.toDate() || new Date(),
         date:
-          updatedData.date instanceof Timestamp
-            ? updatedData.date.toDate()
-            : new Date(updatedData.date),
+          mergedData.date instanceof Timestamp
+            ? mergedData.date.toDate()
+            : new Date(mergedData.date || Date.now()),
       } as unknown as ExpenseResponse;
-    } catch (error) {
-      if (error instanceof NotFoundError || error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new AppError(
-        'Failed to update expense',
-        HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
-    }
+    });
   }
 
   /**
