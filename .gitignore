@@ -40,6 +40,9 @@ yarn-error.log*
 .env.production
 .env.test
 
+# test credentials (sensitive data)
+test-credentials.json
+
 # vercel
 .vercel
 

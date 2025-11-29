@@ -9,6 +9,7 @@ import {
   UserResponse,
 } from '../models/user.model';
 import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
+import { logger } from '../utils/logger';
 import { BaseService } from './base.service';
 import { EmailService } from './email.service';
 import { TwilioService } from './twilio.service';
@@ -227,6 +228,75 @@ export class UserService extends BaseService {
       });
 
       if (authError || !authData.user) {
+        // If phone/email already exists, try to find the existing user
+        if (
+          authError?.message?.includes('already registered') ||
+          authError?.message?.includes('already exists')
+        ) {
+          // Try to find user by phone in Supabase Auth
+          if (formattedPhone) {
+            try {
+              const { data: users } = await supabase.auth.admin.listUsers();
+              const existingAuthUser = users.users.find(
+                (u) => u.phone === formattedPhone || u.email === email
+              );
+
+              if (existingAuthUser) {
+                // User exists in Auth, check if profile exists
+                try {
+                  const existingUser = await this.getUserById(existingAuthUser.id);
+                  return { user: existingUser, isNewUser: false };
+                } catch (profileLookupError) {
+                  // Profile doesn't exist, create it
+                  const userData = {
+                    id: existingAuthUser.id,
+                    email: existingAuthUser.email || email || '',
+                    phone_number: existingAuthUser.phone || formattedPhone || '',
+                    display_name:
+                      displayName || existingAuthUser.user_metadata?.display_name || 'New User',
+                    photo_url: '',
+                    preferences: {
+                      currency: 'INR',
+                      language: 'en',
+                      notifications: {
+                        email: true,
+                        push: true,
+                        sms: true,
+                      },
+                      theme: 'system',
+                      budgetAlerts: true,
+                      monthlyBudget: 0,
+                    },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    is_email_verified: existingAuthUser.email_confirmed_at ? true : false,
+                    is_phone_verified: existingAuthUser.phone_confirmed_at ? true : false,
+                    status: 'active',
+                  };
+
+                  const { data: profileData, error: profileError } = await supabase
+                    .from('profiles')
+                    .insert(userData)
+                    .select()
+                    .single();
+
+                  if (profileError || !profileData) {
+                    throw new AppError(
+                      'Failed to create user profile',
+                      HttpStatusCode.INTERNAL_SERVER_ERROR,
+                      ErrorType.DATABASE
+                    );
+                  }
+
+                  return { user: this.transformUserResponse(profileData), isNewUser: false };
+                }
+              }
+            } catch (findError) {
+              // If we can't find the user, throw the original error
+            }
+          }
+        }
+
         throw new AppError(
           authError?.message || 'Failed to create user',
           HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -286,21 +356,37 @@ export class UserService extends BaseService {
 
       user = this.transformUserResponse(profileData);
 
-      // Send verification email/SMS
+      // Send verification email/SMS for newly created users
+      // Email: Send to users with email addresses
+      // SMS: Send to users with phone numbers
       try {
         if (email) {
           // Generate password reset link (user will set password when they verify)
           const resetLink = `${env.FRONTEND_URL}/verify-email?token=${authData.user.id}`;
-          await this.emailService.sendVerificationEmail(email, resetLink);
+          try {
+            await this.emailService.sendVerificationEmail(email, resetLink);
+            logger.info(`Verification email sent to: ${email}`);
+          } catch (emailError) {
+            // Log error but don't fail user creation
+            logger.error(`Failed to send verification email to ${email}`, { error: emailError });
+          }
         }
 
         if (formattedPhone) {
           // Send OTP via SMS
-          await this.twilioService.sendOTP(formattedPhone);
+          try {
+            await this.twilioService.sendOTP(formattedPhone);
+            logger.info(`Verification SMS sent to: ${formattedPhone}`);
+          } catch (smsError) {
+            // Log error but don't fail user creation
+            logger.error(`Failed to send verification SMS to ${formattedPhone}`, {
+              error: smsError,
+            });
+          }
         }
       } catch (notificationError) {
         // Log error but don't fail user creation
-        console.error('Failed to send verification notification:', notificationError);
+        logger.error('Failed to send verification notification', { error: notificationError });
       }
 
       return { user, isNewUser: true };

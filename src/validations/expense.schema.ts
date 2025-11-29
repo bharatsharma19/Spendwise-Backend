@@ -3,7 +3,17 @@ import Joi from 'joi';
 export const expenseSchema = {
   createExpense: Joi.object({
     amount: Joi.number().required().min(0).precision(2),
-    category: Joi.string().required().trim(),
+    category: Joi.string()
+      .allow('') // Allow blank category
+      .optional() // Make it optional to allow custom categories
+      .trim()
+      .custom((value) => {
+        // If provided and not blank, allow any string (custom category)
+        if (value && value.trim() !== '') {
+          return value; // Allow custom categories
+        }
+        return value; // Allow blank/empty
+      }),
     description: Joi.string().trim().max(500),
     date: Joi.date().required().iso(),
     currency: Joi.string().trim().uppercase().default('INR'),
@@ -27,7 +37,17 @@ export const expenseSchema = {
 
   updateExpense: Joi.object({
     amount: Joi.number().min(0).precision(2),
-    category: Joi.string().trim(),
+    category: Joi.string()
+      .allow('') // Allow blank category
+      .optional() // Make it optional to allow custom categories
+      .trim()
+      .custom((value) => {
+        // If provided and not blank, allow any string (custom category)
+        if (value && value.trim() !== '') {
+          return value; // Allow custom categories
+        }
+        return value; // Allow blank/empty
+      }),
     description: Joi.string().trim().max(500),
     date: Joi.date().iso(),
     currency: Joi.string().trim().uppercase(),

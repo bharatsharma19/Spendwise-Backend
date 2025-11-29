@@ -114,7 +114,9 @@ export class GroupController {
         role: 'member' as const,
       };
 
-      const member = await this.groupService.addGroupMember(groupId, memberData);
+      // Pass inviter ID (current user) to the service
+      const inviterId = req.user!.uid;
+      const member = await this.groupService.addGroupMember(groupId, memberData, inviterId);
 
       res.status(201).json({
         status: 'success',
@@ -211,6 +213,7 @@ export class GroupController {
         tags: value.tags,
         receipt_url: value.receiptUrl,
         paid_by: userId,
+        splits: value.splits, // Pass splits from request
       };
 
       const expense = await this.groupService.addGroupExpense(groupId, expenseData);
@@ -266,6 +269,25 @@ export class GroupController {
       res.json({
         status: 'success',
         data: settlement,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getGroup = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      this.validateUser(req);
+
+      const { groupId } = req.params;
+      if (!groupId) {
+        this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
+      }
+
+      const group = await this.groupService.getGroup(groupId, req.user!.uid);
+      res.json({
+        status: 'success',
+        data: group,
       });
     } catch (error) {
       next(error);

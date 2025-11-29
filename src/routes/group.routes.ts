@@ -10,6 +10,7 @@ router.use(authenticate);
 
 // Group management
 router.post('/', groupController.createGroup);
+router.get('/:groupId', groupController.getGroup);
 router.post('/:groupId/members', groupController.addGroupMember);
 router.delete('/:groupId/members/:memberId', groupController.removeGroupMember);
 router.post('/:groupId/leave', groupController.leaveGroup);

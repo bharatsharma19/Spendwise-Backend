@@ -138,7 +138,15 @@ export const schemas = {
     currency: Joi.string().length(VALIDATION_CONSTANTS.CURRENCY_LENGTH).uppercase().required(),
     category: Joi.string()
       .valid(...VALIDATION_CONSTANTS.CATEGORIES)
-      .required(),
+      .allow('') // Allow blank category
+      .optional() // Make it optional to allow custom categories
+      .custom((value) => {
+        // If provided and not blank, allow any string (custom category) or validate against known
+        if (value && value.trim() !== '') {
+          return value; // Allow custom categories
+        }
+        return value; // Allow blank/empty
+      }),
     description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).required().trim(),
     date: Joi.date().iso().required().max('now'),
     location: Joi.object({
@@ -179,7 +187,17 @@ export const schemas = {
   updateExpense: Joi.object({
     amount: Joi.number().positive().precision(2),
     currency: Joi.string().length(VALIDATION_CONSTANTS.CURRENCY_LENGTH).uppercase(),
-    category: Joi.string().valid(...VALIDATION_CONSTANTS.CATEGORIES),
+    category: Joi.string()
+      .valid(...VALIDATION_CONSTANTS.CATEGORIES)
+      .allow('') // Allow blank category
+      .optional() // Make it optional to allow custom categories
+      .custom((value) => {
+        // If provided and not blank, allow any string (custom category)
+        if (value && value.trim() !== '') {
+          return value; // Allow custom categories
+        }
+        return value; // Allow blank/empty
+      }),
     description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).trim(),
     date: Joi.date().iso().max('now'),
     location: Joi.object({

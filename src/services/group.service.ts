@@ -19,6 +19,7 @@ import {
   HttpStatusCode,
   NotFoundError,
 } from '../utils/error';
+import { logger } from '../utils/logger';
 import { BaseService } from './base.service';
 import { NotificationService } from './notification.service';
 
@@ -133,10 +134,23 @@ export class GroupService extends BaseService {
 
   public async addGroupMember(
     groupId: string,
-    member: Omit<GroupMember, 'id' | 'joined_at'>
+    member: Omit<GroupMember, 'id' | 'joined_at'>,
+    inviterId: string
   ): Promise<GroupMember> {
     try {
-      // Check if already exists
+      // Verify inviter is a member of the group (any member can add others)
+      const { data: inviterMember } = await supabase
+        .from('group_members')
+        .select('id, role')
+        .eq('group_id', groupId)
+        .eq('user_id', inviterId)
+        .single();
+
+      if (!inviterMember) {
+        throw new AuthorizationError('You must be a member of this group to add members');
+      }
+
+      // Check if user to add already exists in group
       const { data: existing } = await supabase
         .from('group_members')
         .select('id')
@@ -167,14 +181,131 @@ export class GroupService extends BaseService {
 
       if (error) throw error;
 
-      // Notify
+      // Get group and inviter information
       const group = await this.getDocument<Group>(groupId);
+      const { data: inviterProfile } = await supabase
+        .from('profiles')
+        .select('display_name, email, phone_number')
+        .eq('id', inviterId)
+        .single();
+
+      const inviterName = inviterProfile?.display_name || 'Someone';
+      const inviterEmail = inviterProfile?.email || '';
+      const inviterPhone = inviterProfile?.phone_number || '';
+
+      // Get member profile for notifications
+      const { data: memberProfile } = await supabase
+        .from('profiles')
+        .select('email, phone_number')
+        .eq('id', member.user_id)
+        .single();
+
+      // Create in-app notification
       await this.notificationService.createGroupInviteNotification(
         member.user_id,
         groupId,
         group.name,
-        group.created_by
+        inviterId
       );
+
+      // Send notification: Email preferred, fallback to SMS
+      // Email: Send to users with email addresses
+      // SMS: Send to users with phone numbers (if no email or email fails)
+      let notificationSent = false;
+
+      // Try email first (if email exists)
+      if (memberProfile?.email) {
+        try {
+          const { EmailService } = await import('./email.service');
+          const emailService = EmailService.getInstance();
+          await emailService.sendGroupInviteEmail(
+            memberProfile.email,
+            group.name,
+            inviterName,
+            inviterEmail, // Include inviter's email
+            groupId
+          );
+          notificationSent = true;
+          logger.info(
+            `Group invite email sent to: ${memberProfile.email} for group "${group.name}"`
+          );
+        } catch (emailError) {
+          logger.error(`Failed to send group invite email to ${memberProfile.email}`, {
+            error: emailError,
+            groupId,
+            groupName: group.name,
+          });
+          // Continue to try SMS if email fails
+        }
+      }
+
+      // Try SMS if email not available or failed
+      if (!notificationSent && memberProfile?.phone_number) {
+        try {
+          const { TwilioService } = await import('./twilio.service');
+          const twilioService = TwilioService.getInstance();
+          await twilioService.sendGroupInviteSMS(
+            memberProfile.phone_number,
+            group.name,
+            inviterName,
+            inviterPhone // Include inviter's phone number
+          );
+          notificationSent = true;
+          logger.info(
+            `Group invite SMS sent to: ${memberProfile.phone_number} for group "${group.name}"`
+          );
+        } catch (smsError) {
+          logger.error(`Failed to send group invite SMS to ${memberProfile.phone_number}`, {
+            error: smsError,
+            groupId,
+            groupName: group.name,
+          });
+          // Don't throw - continue with friend addition
+        }
+      }
+
+      if (!notificationSent) {
+        logger.warn(`No notification sent (no email or phone for user ${member.user_id})`, {
+          userId: member.user_id,
+          groupId,
+        });
+      }
+
+      // Add bidirectional friendship (if not already friends)
+      if (inviterId !== member.user_id) {
+        try {
+          // Check if friendship already exists in either direction
+          const { data: existingFriendships } = await supabase
+            .from('friends')
+            .select('id, user_id, friend_id, status')
+            .or(
+              `and(user_id.eq.${inviterId},friend_id.eq.${member.user_id}),and(user_id.eq.${member.user_id},friend_id.eq.${inviterId})`
+            );
+
+          if (!existingFriendships || existingFriendships.length === 0) {
+            // Create friendship (one direction is enough - the relationship is bidirectional in logic)
+            // We'll create it from inviter to member
+            await supabase.from('friends').insert({
+              user_id: inviterId,
+              friend_id: member.user_id,
+              status: 'accepted',
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            // Update existing friendship to accepted if it was pending
+            const existing = existingFriendships[0] as { id: string; status: string };
+            if (existing.status === 'pending') {
+              await supabase
+                .from('friends')
+                .update({ status: 'accepted', updated_at: new Date().toISOString() })
+                .eq('id', existing.id);
+            }
+          }
+        } catch (friendError) {
+          console.error('Error adding friendship:', friendError);
+          // Don't throw - friendship addition failure shouldn't break the flow
+        }
+      }
 
       return newMember as unknown as GroupMember;
     } catch (error) {
@@ -259,12 +390,13 @@ export class GroupService extends BaseService {
     groupId: string,
     data: Omit<GroupExpense, 'id' | 'created_at' | 'updated_at' | 'splits'> & {
       paid_by: string;
+      splits?: Array<{ userId: string; amount: number }>; // Optional splits from request
     }
   ): Promise<GroupExpense> {
     try {
       const group = await this.getDocument<Group>(groupId);
 
-      // Fetch all members to calculate splits
+      // Fetch all members to validate and calculate splits
       const { data: members, error: membersError } = await supabase
         .from('group_members')
         .select('*')
@@ -272,17 +404,65 @@ export class GroupService extends BaseService {
 
       if (membersError || !members) throw new Error('Failed to fetch members');
 
-      const splits: ExpenseSplit[] = members.map((member: { user_id: string }) => ({
-        user_id: member.user_id,
-        amount: data.amount / members.length,
-        status: 'pending' as const,
-      }));
+      let splits: ExpenseSplit[];
+
+      // If splits are provided, use them; otherwise create equal splits
+      if (data.splits && data.splits.length > 0) {
+        // Validate that all split user IDs are members of the group
+        const memberIds = new Set(members.map((m: { user_id: string }) => m.user_id));
+        const invalidUserIds = data.splits.filter((split) => !memberIds.has(split.userId));
+
+        if (invalidUserIds.length > 0) {
+          throw new AppError(
+            `Invalid user IDs in splits: ${invalidUserIds.map((s) => s.userId).join(', ')}`,
+            HttpStatusCode.BAD_REQUEST,
+            ErrorType.VALIDATION
+          );
+        }
+
+        // Validate that split amounts sum to total amount (allow small floating point differences)
+        const totalSplitAmount = data.splits.reduce((sum, split) => sum + split.amount, 0);
+        if (Math.abs(totalSplitAmount - data.amount) > 0.01) {
+          throw new AppError(
+            `Split amounts (${totalSplitAmount}) must sum to total amount (${data.amount})`,
+            HttpStatusCode.BAD_REQUEST,
+            ErrorType.VALIDATION
+          );
+        }
+
+        // Convert provided splits to ExpenseSplit format
+        splits = data.splits.map((split) => ({
+          user_id: split.userId,
+          amount: split.amount,
+          status: 'pending' as const,
+        }));
+      } else {
+        // Create equal splits for all members
+        splits = members.map((member: { user_id: string }) => ({
+          user_id: member.user_id,
+          amount: data.amount / members.length,
+          status: 'pending' as const,
+        }));
+      }
+
+      // Remove splits from data before inserting (it's not a column, we handle it separately)
+      const expenseDataWithoutSplits = {
+        amount: data.amount,
+        currency: data.currency,
+        category: data.category,
+        description: data.description,
+        date: data.date,
+        location: data.location,
+        tags: data.tags,
+        receipt_url: data.receipt_url,
+        paid_by: data.paid_by,
+      };
 
       const { data: expense, error } = await supabase
         .from('group_expenses')
         .insert({
           group_id: groupId,
-          ...data,
+          ...expenseDataWithoutSplits,
           splits, // JSONB column
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -379,7 +559,7 @@ export class GroupService extends BaseService {
     }
   }
 
-  public async settleGroup(groupId: string, userId: string): Promise<GroupSettlement> {
+  public async settleGroup(groupId: string, userId: string): Promise<GroupSettlement[]> {
     await this.validateMemberAccess(groupId, userId);
 
     // Use Supabase RPC for atomicity
@@ -396,9 +576,8 @@ export class GroupService extends BaseService {
       );
     }
 
-    // RPC should return the created settlements or the first one
-    // Assuming it returns the settlement object(s)
-    return data as unknown as GroupSettlement;
+    // RPC returns an array of created settlements
+    return (data || []) as unknown as GroupSettlement[];
   }
 
   public async getGroupAnalytics(groupId: string, userId: string): Promise<GroupAnalyticsResponse> {

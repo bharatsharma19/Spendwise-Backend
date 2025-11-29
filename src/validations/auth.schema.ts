@@ -3,7 +3,7 @@ import { VALIDATION_CONSTANTS } from '../middleware/validate';
 
 export const authSchema = {
   register: Joi.object({
-    email: Joi.string().email().required().trim().lowercase(),
+    email: Joi.string().email().trim().lowercase(),
     password: Joi.string()
       .min(VALIDATION_CONSTANTS.PASSWORD_MIN_LENGTH)
       .max(VALIDATION_CONSTANTS.PASSWORD_MAX_LENGTH)
@@ -13,11 +13,19 @@ export const authSchema = {
         'string.pattern.base':
           'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
       }),
-    phoneNumber: Joi.string().pattern(VALIDATION_CONSTANTS.PHONE_REGEX).required().messages({
-      'string.pattern.base': 'Phone number must be in E.164 format (e.g., +1234567890)',
-    }),
+    phoneNumber: Joi.string()
+      .pattern(VALIDATION_CONSTANTS.PHONE_REGEX)
+      .allow('')
+      .optional()
+      .messages({
+        'string.pattern.base': 'Phone number must be in E.164 format (e.g., +1234567890)',
+      }),
     displayName: Joi.string().max(VALIDATION_CONSTANTS.NAME_MAX_LENGTH).trim(),
-  }),
+  })
+    .or('email', 'phoneNumber')
+    .messages({
+      'object.missing': 'Either email or phoneNumber is required',
+    }),
 
   login: Joi.object({
     email: Joi.string().email().required().trim().lowercase(),

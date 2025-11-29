@@ -37,18 +37,22 @@ export class AuthController {
 
       const { email, password, phoneNumber, displayName } = value;
 
-      // Format phone number to E.164 format
-      const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+      // Format phone number to E.164 format (only if provided)
+      const formattedPhoneNumber = phoneNumber
+        ? phoneNumber.startsWith('+')
+          ? phoneNumber
+          : `+${phoneNumber}`
+        : undefined;
 
       // Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: email || undefined,
         password,
-        phone: formattedPhoneNumber,
+        phone: formattedPhoneNumber || undefined,
         options: {
           data: {
             display_name: displayName,
-            phone_number: formattedPhoneNumber,
+            phone_number: formattedPhoneNumber || '',
           },
         },
       });
@@ -72,8 +76,8 @@ export class AuthController {
       // We use upsert to handle potential race conditions if a trigger also creates the profile.
       const userData = {
         id: authData.user.id,
-        email: authData.user.email,
-        phone_number: formattedPhoneNumber,
+        email: authData.user.email || email || '',
+        phone_number: formattedPhoneNumber || authData.user.phone || '',
         display_name: displayName,
         photo_url: '',
         preferences: {

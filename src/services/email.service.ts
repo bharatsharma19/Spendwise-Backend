@@ -32,7 +32,7 @@ export class EmailService {
   public async sendVerificationEmail(email: string, verificationLink: string): Promise<void> {
     try {
       const mailOptions = {
-        from: env.EMAIL_USER,
+        from: `Spendwise <${env.EMAIL_USER}>`,
         to: email,
         subject: 'Verify Your Email',
         html: `
@@ -58,7 +58,7 @@ export class EmailService {
   public async sendPasswordResetEmail(email: string, resetLink: string): Promise<void> {
     try {
       const mailOptions = {
-        from: env.EMAIL_USER,
+        from: `Spendwise <${env.EMAIL_USER}>`,
         to: email,
         subject: 'Reset Your Password',
         html: `
@@ -78,6 +78,40 @@ export class EmailService {
       const errorStatus =
         (error as { status?: number })?.status || HttpStatusCode.INTERNAL_SERVER_ERROR;
       throw new AppError(errorMessage, errorStatus, ErrorType.DATABASE);
+    }
+  }
+
+  public async sendGroupInviteEmail(
+    email: string,
+    groupName: string,
+    inviterName: string,
+    inviterEmail: string,
+    groupId: string
+  ): Promise<void> {
+    try {
+      const appUrl = env.FRONTEND_URL || 'http://localhost:3000';
+      const groupLink = `${appUrl}/groups/${groupId}`;
+      const inviterInfo = inviterEmail ? `${inviterName} (${inviterEmail})` : inviterName;
+
+      const mailOptions = {
+        from: `Spendwise <${env.EMAIL_USER}>`,
+        to: email,
+        subject: `You've been added to "${groupName}"`,
+        html: `
+          <h1>Group Invitation</h1>
+          <p>Hello!</p>
+          <p><strong>${inviterInfo}</strong> has added you to the group "<strong>${groupName}</strong>".</p>
+          <p>You can now view and manage expenses in this group.</p>
+          <p><a href="${groupLink}">View Group</a></p>
+          <p>If you didn't expect this invitation, you can ignore this email.</p>
+          <p>Best regards,<br>Smart Expense Tracker Team</p>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+    } catch (error: unknown) {
+      console.error('Error sending group invite email:', error);
+      // Don't throw - email failure shouldn't break the flow
     }
   }
 }

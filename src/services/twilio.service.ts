@@ -73,4 +73,28 @@ export class TwilioService {
 
     return isValid;
   }
+
+  public async sendGroupInviteSMS(
+    phoneNumber: string,
+    groupName: string,
+    inviterName: string,
+    inviterPhone: string
+  ): Promise<boolean> {
+    try {
+      const inviterInfo = inviterPhone ? `${inviterName} (${inviterPhone})` : inviterName;
+      const message = `Hi! ${inviterInfo} has added you to the group "${groupName}" on Smart Expense Tracker. You can now view and manage expenses together!`;
+
+      const result = await this.client.messages.create({
+        body: message,
+        to: phoneNumber,
+        from: env.TWILIO_PHONE_NUMBER,
+      });
+
+      return result.status === 'queued' || result.status === 'sent';
+    } catch (error: unknown) {
+      console.error('Error sending group invite SMS:', error);
+      // Don't throw - SMS failure shouldn't break the flow
+      return false;
+    }
+  }
 }
