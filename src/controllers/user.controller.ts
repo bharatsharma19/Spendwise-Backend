@@ -1,9 +1,9 @@
-import { Response, NextFunction } from 'express';
-import { UserService } from '../services/user.service';
-import { ValidationError, AppError, HttpStatusCode, ErrorType } from '../utils/error';
+import { NextFunction, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { userSchema } from '../validations/user.schema';
 import { User } from '../models/user.model';
+import { UserService } from '../services/user.service';
+import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
+import { userSchema } from '../validations/user.schema';
 
 const userService = UserService.getInstance();
 
@@ -40,7 +40,7 @@ export class UserController {
     }
   }
 
-  async getProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  getProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -54,9 +54,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async updateProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  updateProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -75,9 +75,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async updatePreferences(req: AuthRequest, res: Response, next: NextFunction) {
+  updatePreferences = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -96,9 +96,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async updateSettings(req: AuthRequest, res: Response, next: NextFunction) {
+  updateSettings = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -117,9 +117,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getNotifications(req: AuthRequest, res: Response, next: NextFunction) {
+  getNotifications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -133,9 +133,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async markNotificationAsRead(req: AuthRequest, res: Response, next: NextFunction) {
+  markNotificationAsRead = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -154,9 +154,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async deleteNotification(req: AuthRequest, res: Response, next: NextFunction) {
+  deleteNotification = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -175,9 +175,9 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getUserStats(req: AuthRequest, res: Response, next: NextFunction) {
+  getUserStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -191,5 +191,5 @@ export class UserController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 }

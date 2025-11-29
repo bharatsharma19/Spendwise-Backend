@@ -1,43 +1,92 @@
 import request from 'supertest';
 import app from '../../app';
+import { supabase } from '../../config/supabase';
 
-// Mock Firebase
-jest.mock('../../config/firebase', () => ({
-  db: {
-    collection: jest.fn(),
-  },
-}));
-
-// Mock Auth Middleware
-jest.mock('../../middleware/auth', () => ({
-  authenticate: (req: any, _res: any, next: any) => {
-    req.user = { uid: 'test-user-id', email: 'test@example.com' };
-    next();
-  },
-}));
+// Mock the authentication middleware for these protected routes
+jest.mock('../../middleware/auth', () => {
+  const { mockAuthenticate } = require('../utils/mockAuth');
+  return {
+    authenticate: mockAuthenticate,
+  };
+});
 
 describe('Expense Routes', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   describe('POST /api/expenses', () => {
-    it('should create an expense', async () => {
-      const res = await request(app).post('/api/expenses').send({
-        amount: 100,
+    it('should create an expense successfully', async () => {
+      const mockExpenseData = {
+        amount: 50.0,
         category: 'food',
         description: 'Lunch',
         date: new Date().toISOString(),
         currency: 'USD',
+        isRecurring: false,
+      };
+
+      // Mock Supabase insert response
+      (supabase.from as jest.Mock).mockImplementation((table) => {
+        if (table === 'expenses') {
+          return {
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: { id: 'expense-123', user_id: 'test-user-id', ...mockExpenseData },
+              error: null,
+            }),
+          };
+        }
+        return { select: jest.fn().mockReturnThis() };
       });
-      expect(res.status).not.toBe(404);
+
+      const res = await request(app).post('/api/expenses').send(mockExpenseData);
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.amount).toBe(50);
+      expect(res.body.data.id).toBeDefined();
+    });
+
+    it('should fail if required fields are missing', async () => {
+      const res = await request(app).post('/api/expenses').send({
+        description: 'Missing amount',
+      });
+      expect(res.status).toBe(400);
     });
   });
 
   describe('GET /api/expenses', () => {
-    it('should list expenses', async () => {
+    it('should return a list of expenses', async () => {
+      // Mock Supabase select response
+      (supabase.from as jest.Mock).mockImplementation(() => {
+        const mockData = [
+          {
+            id: '1',
+            amount: 20,
+            category: 'food',
+            user_id: 'test-user-id',
+            date: new Date().toISOString(),
+          },
+          {
+            id: '2',
+            amount: 30,
+            category: 'transport',
+            user_id: 'test-user-id',
+            date: new Date().toISOString(),
+          },
+        ];
+
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          gte: jest.fn().mockReturnThis(),
+          lte: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          then: (resolve: any) => resolve({ data: mockData, error: null }),
+        };
+      });
+
       const res = await request(app).get('/api/expenses');
-      expect(res.status).not.toBe(404);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
     });
   });
 });

@@ -1,34 +1,43 @@
-// Mock uuid to prevent ESM issues
+import { jest } from '@jest/globals';
+
+// 1. Mock UUID to ensure consistent IDs in snapshots/assertions if needed
 jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'mock-uuid-' + Math.random().toString(36).substring(7)),
+  v4: jest.fn(() => 'test-uuid-1234-5678'),
 }));
 
-// Mock Firebase Admin
-const mockDate = new Date('2023-01-01');
+// 2. Mock Supabase Client
+// This prevents real network calls during tests
+const mockSupabase = {
+  from: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  insert: jest.fn().mockReturnThis(),
+  update: jest.fn().mockReturnThis(),
+  delete: jest.fn().mockReturnThis(),
+  eq: jest.fn().mockReturnThis(),
+  single: jest.fn().mockReturnThis(),
+  order: jest.fn().mockReturnThis(),
+  auth: {
+    signUp: jest.fn(),
+    signInWithPassword: jest.fn(), // If used
+    getUser: jest.fn(),
+    admin: {
+      deleteUser: jest.fn(),
+      getUserById: jest.fn(),
+    },
+  },
+  rpc: jest.fn(),
+};
 
-class MockTimestamp {
-  constructor(private date: Date) {}
+jest.mock('../config/supabase', () => ({
+  supabase: mockSupabase,
+}));
 
-  toDate() {
-    return this.date;
-  }
-
-  static now() {
-    return new MockTimestamp(mockDate);
-  }
-
-  static fromDate(date: Date) {
-    return new MockTimestamp(date);
-  }
-}
-
-// Mocks removed to rely on internal test logic in config files
-
-// Global Jest setup
+// Global before/after hooks
 beforeAll(() => {
-  // Add any global setup here
+  process.env.NODE_ENV = 'test';
+  process.env.JWT_SECRET = 'test-secret';
 });
 
-afterAll(() => {
-  // Add any global cleanup here
+afterEach(() => {
+  jest.clearAllMocks();
 });

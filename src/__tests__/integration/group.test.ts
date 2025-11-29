@@ -1,44 +1,54 @@
 import request from 'supertest';
 import app from '../../app';
+import { supabase } from '../../config/supabase';
 
-// Mock Firebase
-jest.mock('../../config/firebase', () => ({
-  db: {
-    collection: jest.fn(),
-  },
-}));
-
-// Mock Auth Middleware
-jest.mock('../../middleware/auth', () => ({
-  authenticate: (req: any, _res: any, next: any) => {
-    req.user = { uid: 'test-user-id', email: 'test@example.com' };
-    next();
-  },
-}));
+jest.mock('../../middleware/auth', () => {
+  const { mockAuthenticate } = require('../utils/mockAuth');
+  return {
+    authenticate: mockAuthenticate,
+  };
+});
 
 describe('Group Routes', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   describe('POST /api/groups', () => {
-    it('should create a group', async () => {
+    it('should create a group successfully', async () => {
+      // Mock Group Insert
+      const mockGroup = {
+        id: 'group-1',
+        name: 'Trip',
+        created_by: 'test-user-id',
+        created_at: new Date().toISOString(),
+      };
+
+      (supabase.from as jest.Mock).mockImplementation((table) => {
+        if (table === 'groups') {
+          return {
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+          };
+        }
+        if (table === 'group_members') {
+          return {
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: { id: 'member-1', role: 'admin', user_id: 'test-user-id' },
+              error: null,
+            }),
+          };
+        }
+        return { select: jest.fn() };
+      });
+
       const res = await request(app).post('/api/groups').send({
-        name: 'Test Group',
-        description: 'Test Description',
+        name: 'Trip',
+        description: 'Summer Vacation',
         currency: 'USD',
       });
-      expect(res.status).not.toBe(404);
-    });
-  });
 
-  describe('POST /api/groups/:groupId/members', () => {
-    it('should add a member', async () => {
-      const res = await request(app).post('/api/groups/group-123/members').send({
-        email: 'member@example.com',
-        displayName: 'Member Name',
-      });
-      expect(res.status).not.toBe(404);
+      expect(res.status).toBe(201);
+      expect(res.body.data.name).toBe('Trip');
     });
   });
 });

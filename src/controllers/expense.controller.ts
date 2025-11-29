@@ -49,7 +49,7 @@ export class ExpenseController {
     }
   }
 
-  async createExpense(req: AuthRequest, res: Response, next: NextFunction) {
+  createExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
@@ -97,9 +97,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getExpense(req: AuthRequest, res: Response, next: NextFunction) {
+  getExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -117,9 +117,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getExpenses(req: AuthRequest, res: Response, next: NextFunction) {
+  getExpenses = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -138,9 +138,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async updateExpense(req: AuthRequest, res: Response, next: NextFunction) {
+  updateExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
@@ -188,9 +188,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async updateExpenseSplitStatus(req: AuthRequest, res: Response, next: NextFunction) {
+  updateExpenseSplitStatus = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -217,9 +217,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async deleteExpense(req: AuthRequest, res: Response, next: NextFunction) {
+  deleteExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -237,9 +237,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getExpenseSummary(req: AuthRequest, res: Response, next: NextFunction) {
+  getExpenseSummary = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -256,9 +256,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getCategoryStats(req: AuthRequest, res: Response, next: NextFunction) {
+  getCategoryStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -275,9 +275,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getExpenseTrends(req: AuthRequest, res: Response, next: NextFunction) {
+  getExpenseTrends = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
 
@@ -294,9 +294,9 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 
-  async getExpenseAnalytics(req: AuthRequest, res: Response, next: NextFunction) {
+  getExpenseAnalytics = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
@@ -321,5 +321,5 @@ export class ExpenseController {
     } catch (error) {
       next(error);
     }
-  }
+  };
 }

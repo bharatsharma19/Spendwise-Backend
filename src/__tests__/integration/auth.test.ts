@@ -1,18 +1,9 @@
 import request from 'supertest';
 import app from '../../app';
 
-// Mock Firebase
-jest.mock('../../config/firebase', () => ({
-  db: {
-    collection: jest.fn(),
-  },
-}));
+// We don't mock the auth middleware here because we want to test public endpoints (register/login)
 
 describe('Auth Routes', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   describe('POST /api/auth/register', () => {
     it('should register a new user', async () => {
       // Mock implementation would go here
