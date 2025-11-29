@@ -1,0 +1,195 @@
+[
+  {
+    "step": "GET /api/users/profile",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "email": "bharat8717sharma@gmail.com",
+        "phone_number": "+918717944975",
+        "display_name": "Bharat Sharma",
+        "photo_url": "",
+        "preferences": {
+          "theme": "system",
+          "currency": "INR",
+          "language": "en",
+          "budgetAlerts": true,
+          "monthlyBudget": 0,
+          "notifications": {
+            "sms": true,
+            "push": true,
+            "email": true
+          }
+        },
+        "created_at": "2025-11-29T08:21:42.889+00:00",
+        "updated_at": "2025-11-29T08:21:42.889+00:00",
+        "is_email_verified": false,
+        "is_phone_verified": false,
+        "status": "active",
+        "last_login_at": null,
+        "last_logout_at": null,
+        "createdAt": "2025-11-29T08:21:42.889Z",
+        "updatedAt": "2025-11-29T08:21:42.889Z"
+      }
+    }
+  },
+  {
+    "step": "POST /api/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "235d75de-9d62-494f-91ec-eb3300f37e2a",
+        "userId": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "amount": 150,
+        "category": "food",
+        "description": "Personal Breakfast",
+        "date": "2025-11-29T09:18:05.921Z",
+        "currency": "INR",
+        "isRecurring": false,
+        "isSplit": false,
+        "splitDetails": null,
+        "createdAt": "2025-11-29T09:18:06.402Z",
+        "updatedAt": "2025-11-29T09:18:06.402Z"
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "624eacf7-fe59-4073-aa66-973aaba8f7a7",
+        "name": "Goa Trip",
+        "description": "Friends Vacation",
+        "created_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "currency": "INR",
+        "settings": {
+          "requireApproval": false,
+          "defaultSplitType": "equal",
+          "allowMemberInvites": true
+        },
+        "created_at": "2025-11-29T09:18:07.163+00:00",
+        "updated_at": "2025-11-29T09:18:07.163+00:00",
+        "members": [
+          {
+            "id": "0e2424fa-a725-41dc-a29f-1657722ee962",
+            "group_id": "624eacf7-fe59-4073-aa66-973aaba8f7a7",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+            "role": "admin",
+            "joined_at": "2025-11-29T09:18:07.478+00:00"
+          }
+        ],
+        "expenses": [],
+        "settlements": []
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/members",
+    "status": 500,
+    "data": {
+      "status": "error",
+      "type": "DatabaseError",
+      "message": "Failed to add group member",
+      "stack": "Error: Failed to add group member\n    at GroupService.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\group.service.js:116:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:59:36)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "a89f2a31-6734-402e-af78-cd9b3a799ce0",
+        "group_id": "624eacf7-fe59-4073-aa66-973aaba8f7a7",
+        "paid_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "amount": 2000,
+        "currency": "INR",
+        "category": "transportation",
+        "description": "Flight Booking",
+        "date": "2025-11-29T09:18:08.956+00:00",
+        "location": null,
+        "tags": [
+          "flight"
+        ],
+        "receipt_url": "https://example.com/receipt.jpg",
+        "splits": [
+          {
+            "amount": 2000,
+            "status": "pending",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          }
+        ],
+        "created_at": "2025-11-29T09:18:09.835+00:00",
+        "updated_at": "2025-11-29T09:18:09.835+00:00"
+      }
+    }
+  },
+  {
+    "step": "GET /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/analytics",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "totalExpenses": 2000,
+        "totalSettlements": 0,
+        "memberBalances": {
+          "462350fe-5069-4edb-ae2f-1e15b857f7ce": 0
+        },
+        "expenseByCategory": {
+          "transportation": 2000
+        }
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/settle",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": null
+    }
+  },
+  {
+    "step": "POST /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/leave",
+    "status": 404,
+    "data": {
+      "status": "fail",
+      "type": "NotFoundError",
+      "message": "Member not found in this group",
+      "stack": "NotFoundError: Member not found in this group\n    at GroupService.removeGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\group.service.js:128:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.leaveGroup (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:94:17)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/groups/624eacf7-fe59-4073-aa66-973aaba8f7a7/members",
+    "status": 500,
+    "data": {
+      "status": "error",
+      "type": "DatabaseError",
+      "message": "Failed to add group member",
+      "stack": "Error: Failed to add group member\n    at GroupService.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\group.service.js:116:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:59:36)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "GET /api/users/stats",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "totalExpenses": 6,
+        "totalGroups": 6,
+        "totalFriends": 0,
+        "monthlySpending": 1250,
+        "categoryBreakdown": {
+          "food": 1250
+        }
+      }
+    }
+  }
+]

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+
 import {
   ExpenseSplit,
   Group,
@@ -177,9 +178,55 @@ export class GroupService extends BaseService {
 
       return newMember as unknown as GroupMember;
     } catch (error) {
+      console.error('Add Group Member Error:', error);
       if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to add group member',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  public async removeGroupMember(groupId: string, userId: string): Promise<void> {
+    try {
+      // 1. Check if user is a member
+      const { data: member, error: memberError } = await supabase
+        .from('group_members')
+        .select('id')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .single();
+
+      if (memberError || !member) {
+        throw new NotFoundError('Member not found in this group');
+      }
+
+      // 2. Check for outstanding balance
+      const analytics = await this.getGroupAnalytics(groupId, userId);
+      const balance = analytics.memberBalances[userId] || 0;
+
+      // Allow small floating point differences
+      if (Math.abs(balance) > 0.01) {
+        throw new AppError(
+          `Cannot leave group. You have a non-zero balance of ${balance.toFixed(2)}`,
+          HttpStatusCode.CONFLICT,
+          ErrorType.CONFLICT
+        );
+      }
+
+      // 3. Remove member
+      const { error: deleteError } = await supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to remove group member',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
         ErrorType.DATABASE
       );

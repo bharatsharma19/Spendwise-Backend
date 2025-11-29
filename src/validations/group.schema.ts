@@ -24,6 +24,11 @@ export const groupSchema = {
       }),
   }),
 
+  addMember: Joi.object({
+    email: Joi.string().email().required().trim().lowercase(),
+    displayName: Joi.string().optional(),
+  }),
+
   addGroupExpense: Joi.object({
     amount: Joi.number().positive().required().precision(2),
     currency: Joi.string().length(VALIDATION_CONSTANTS.CURRENCY_LENGTH).uppercase().required(),

@@ -46,6 +46,13 @@ const gracefulShutdown = async (signal: string) => {
   // Close server to stop accepting new connections
   server.close(() => {
     logger.info('HTTP server closed');
+
+    for (const connection of connections) {
+      connection.destroy();
+    }
+
+    logger.info('Cleaning up resources...');
+    process.exit(0);
   });
 
   // Close all existing connections
