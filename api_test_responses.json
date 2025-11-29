@@ -1,0 +1,757 @@
+[
+  {
+    "step": "POST /api/auth/login",
+    "status": 410,
+    "data": {
+      "status": "fail",
+      "type": "ValidationError",
+      "message": "Server-side login is deprecated. Please use client-side Supabase SDK to login.",
+      "stack": "Error: Server-side login is deprecated. Please use client-side Supabase SDK to login.\n    at AuthController.login (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\auth.controller.js:87:18)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\routes\\base.routes.js:20:29\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\middleware\\validation.js:19:9\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:822:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:704:5",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "GET /api/users/profile",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "uid": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "email": "bharat8717sharma@gmail.com",
+        "phoneNumber": "+918717944975",
+        "displayName": "Bharat Sharma (Updated)",
+        "preferences": {
+          "theme": "system",
+          "currency": "INR",
+          "language": "en",
+          "budgetAlerts": true,
+          "monthlyBudget": 0,
+          "notifications": {
+            "sms": true,
+            "push": true,
+            "email": true
+          }
+        },
+        "created_at": "2025-11-29T08:21:42.889+00:00",
+        "updated_at": "2025-11-29T10:39:26.223102+00:00",
+        "isEmailVerified": false,
+        "isPhoneVerified": false,
+        "status": "active",
+        "createdAt": "2025-11-29T08:21:42.889Z",
+        "updatedAt": "2025-11-29T10:39:26.223Z"
+      }
+    }
+  },
+  {
+    "step": "PUT /api/users/profile",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "uid": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "email": "bharat8717sharma@gmail.com",
+        "phoneNumber": "+918717944975",
+        "displayName": "Bharat Sharma",
+        "preferences": {
+          "theme": "system",
+          "currency": "INR",
+          "language": "en",
+          "budgetAlerts": true,
+          "monthlyBudget": 0,
+          "notifications": {
+            "sms": true,
+            "push": true,
+            "email": true
+          }
+        },
+        "created_at": "2025-11-29T08:21:42.889+00:00",
+        "updated_at": "2025-11-29T11:52:20.326926+00:00",
+        "isEmailVerified": false,
+        "isPhoneVerified": false,
+        "status": "active",
+        "createdAt": "2025-11-29T08:21:42.889Z",
+        "updatedAt": "2025-11-29T11:52:20.326Z"
+      }
+    }
+  },
+  {
+    "step": "POST /api/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "61811f92-511c-4c0b-9e2f-fda8823a7575",
+        "userId": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "amount": 150,
+        "category": "food",
+        "description": "Breakfast (primary)",
+        "date": "2025-11-29T11:52:20.346Z",
+        "currency": "INR",
+        "isRecurring": false,
+        "isSplit": false,
+        "splitDetails": null,
+        "createdAt": "2025-11-29T11:52:20.988Z",
+        "updatedAt": "2025-11-29T11:52:20.988Z"
+      }
+    }
+  },
+  {
+    "step": "GET /api/expenses",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": [
+        {
+          "id": "61811f92-511c-4c0b-9e2f-fda8823a7575",
+          "userId": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+          "amount": 150,
+          "category": "food",
+          "description": "Breakfast (primary)",
+          "date": "2025-11-29T11:52:20.346Z",
+          "currency": "INR",
+          "isRecurring": false,
+          "isSplit": false,
+          "splitDetails": null,
+          "createdAt": "2025-11-29T11:52:20.988Z",
+          "updatedAt": "2025-11-29T11:52:20.988Z"
+        }
+      ]
+    }
+  },
+  {
+    "step": "GET /api/expenses/stats/summary",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "total": 150,
+        "count": 1,
+        "average": 150,
+        "min": 150,
+        "max": 150
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "name": "Goa Trip - E2E",
+        "description": "Test trip",
+        "created_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "currency": "INR",
+        "settings": {
+          "requireApproval": false,
+          "defaultSplitType": "equal",
+          "allowMemberInvites": true
+        },
+        "created_at": "2025-11-29T11:52:23.065+00:00",
+        "updated_at": "2025-11-29T11:52:23.065+00:00",
+        "members": [
+          {
+            "id": "cd956125-9c79-47a6-84f5-a0b2d3ce801c",
+            "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+            "role": "admin",
+            "joined_at": "2025-11-29T11:52:23.385+00:00"
+          }
+        ],
+        "expenses": [],
+        "settlements": []
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/members",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "a20954fa-8b69-4dfe-92c2-6fba7b7b0e31",
+        "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "user_id": "15540a9a-8d56-4769-abe8-6ee795407258",
+        "role": "member",
+        "joined_at": "2025-11-29T11:52:25.148+00:00",
+        "isNewUser": false
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/members",
+    "status": 500,
+    "data": {
+      "status": "error",
+      "type": "DatabaseError",
+      "message": "Phone number already registered by another user",
+      "stack": "Error: Phone number already registered by another user\n    at UserService.findOrCreateUser (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\user.service.js:186:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:50:56)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/members",
+    "status": 500,
+    "data": {
+      "status": "error",
+      "type": "DatabaseError",
+      "message": "Phone number already registered by another user",
+      "stack": "Error: Phone number already registered by another user\n    at UserService.findOrCreateUser (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\user.service.js:186:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:50:56)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "GET /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "name": "Goa Trip - E2E",
+        "description": "Test trip",
+        "created_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "currency": "INR",
+        "settings": {
+          "requireApproval": false,
+          "defaultSplitType": "equal",
+          "allowMemberInvites": true
+        },
+        "created_at": "2025-11-29T11:52:23.065+00:00",
+        "updated_at": "2025-11-29T11:52:23.065+00:00",
+        "members": [
+          {
+            "userId": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+            "displayName": "",
+            "email": "",
+            "role": "admin",
+            "joinedAt": "2025-11-29T11:52:23.385Z"
+          },
+          {
+            "userId": "15540a9a-8d56-4769-abe8-6ee795407258",
+            "displayName": "",
+            "email": "",
+            "role": "member",
+            "joinedAt": "2025-11-29T11:52:25.148Z"
+          }
+        ],
+        "expenses": [],
+        "settlements": [],
+        "createdBy": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "code": "9486E8",
+        "status": "active",
+        "totalExpenses": 0,
+        "totalMembers": 2,
+        "createdAt": "2025-11-29T11:52:23.065Z",
+        "updatedAt": "2025-11-29T11:52:23.065Z"
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/members/a20954fa-8b69-4dfe-92c2-6fba7b7b0e31/accept",
+    "status": 401,
+    "data": {
+      "status": "fail",
+      "type": "AuthenticationError",
+      "message": "Authentication failed",
+      "stack": "AuthenticationError: Authentication failed\n    at authenticate (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\middleware\\auth.js:31:14)\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at trim_prefix (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:328:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:286:9\n    at router.process_params (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:346:12)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:280:10)\n    at router.handle (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:175:3)\n    at router (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:47:12)\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at trim_prefix (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\index.js:328:13)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/auth/login",
+    "status": 410,
+    "data": {
+      "status": "fail",
+      "type": "ValidationError",
+      "message": "Server-side login is deprecated. Please use client-side Supabase SDK to login.",
+      "stack": "Error: Server-side login is deprecated. Please use client-side Supabase SDK to login.\n    at AuthController.login (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\auth.controller.js:87:18)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\routes\\base.routes.js:20:29\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\middleware\\validation.js:19:9\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:822:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:704:5",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/auth/register",
+    "status": 400,
+    "data": {
+      "status": "fail",
+      "type": "ValidationError",
+      "message": "Validation failed",
+      "stack": "ValidationError: Validation failed\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\middleware\\validation.js:16:18\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:822:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:704:5",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/auth/login",
+    "status": 400,
+    "data": {
+      "status": "fail",
+      "type": "ValidationError",
+      "message": "Validation failed",
+      "stack": "ValidationError: Validation failed\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\middleware\\validation.js:16:18\n    at Layer.handle [as handle_request] (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:822:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:704:5",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/auth/register",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "uid": "f80d56a8-3b06-421f-9604-0198b872e211",
+        "email": "sharmamadhusudhan54@gmail.com",
+        "phoneNumber": "+916263859982",
+        "displayName": "sharmamadhusudhan54",
+        "message": "Please check your email to verify your account"
+      }
+    }
+  },
+  {
+    "step": "POST /api/auth/login",
+    "status": 429,
+    "data": "Too many authentication attempts, please try again after 15 minutes"
+  },
+  {
+    "step": "GET /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "name": "Goa Trip - E2E",
+        "description": "Test trip",
+        "created_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "currency": "INR",
+        "settings": {
+          "requireApproval": false,
+          "defaultSplitType": "equal",
+          "allowMemberInvites": true
+        },
+        "created_at": "2025-11-29T11:52:23.065+00:00",
+        "updated_at": "2025-11-29T11:52:23.065+00:00",
+        "members": [
+          {
+            "userId": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+            "displayName": "",
+            "email": "",
+            "role": "admin",
+            "joinedAt": "2025-11-29T11:52:23.385Z"
+          },
+          {
+            "userId": "15540a9a-8d56-4769-abe8-6ee795407258",
+            "displayName": "",
+            "email": "",
+            "role": "member",
+            "joinedAt": "2025-11-29T11:52:25.148Z"
+          }
+        ],
+        "expenses": [],
+        "settlements": [],
+        "createdBy": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "code": "9486E8",
+        "status": "active",
+        "totalExpenses": 0,
+        "totalMembers": 2,
+        "createdAt": "2025-11-29T11:52:23.065Z",
+        "updatedAt": "2025-11-29T11:52:23.065Z"
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "c11c951c-7c98-4549-a67e-fe0b296f2f3b",
+        "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "paid_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "amount": 40000,
+        "currency": "INR",
+        "category": "transportation",
+        "description": "Flight Booking (owner)",
+        "date": "2025-11-29T11:52:46.597+00:00",
+        "location": null,
+        "tags": null,
+        "receipt_url": null,
+        "splits": [
+          {
+            "amount": 20000,
+            "status": "pending",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          },
+          {
+            "amount": 20000,
+            "status": "pending",
+            "user_id": "15540a9a-8d56-4769-abe8-6ee795407258"
+          }
+        ],
+        "created_at": "2025-11-29T11:52:47.705+00:00",
+        "updated_at": "2025-11-29T11:52:47.705+00:00"
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "ece7a859-60d9-4123-8aff-0000df7718f0",
+        "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "paid_by": "15540a9a-8d56-4769-abe8-6ee795407258",
+        "amount": 2000,
+        "currency": "INR",
+        "category": "food",
+        "description": "Expense by paynride1909",
+        "date": "2025-11-29T11:52:48.185+00:00",
+        "location": null,
+        "tags": null,
+        "receipt_url": null,
+        "splits": [
+          {
+            "amount": 1000,
+            "status": "pending",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          },
+          {
+            "amount": 1000,
+            "status": "pending",
+            "user_id": "15540a9a-8d56-4769-abe8-6ee795407258"
+          }
+        ],
+        "created_at": "2025-11-29T11:52:49.16+00:00",
+        "updated_at": "2025-11-29T11:52:49.16+00:00"
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "e2e85e2a-ec7e-45ea-a5ab-cc112340860b",
+        "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+        "paid_by": "f80d56a8-3b06-421f-9604-0198b872e211",
+        "amount": 2000,
+        "currency": "INR",
+        "category": "food",
+        "description": "Expense by sharmamadhusudhan54",
+        "date": "2025-11-29T11:52:49.519+00:00",
+        "location": null,
+        "tags": null,
+        "receipt_url": null,
+        "splits": [
+          {
+            "amount": 1000,
+            "status": "pending",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          },
+          {
+            "amount": 1000,
+            "status": "pending",
+            "user_id": "15540a9a-8d56-4769-abe8-6ee795407258"
+          }
+        ],
+        "created_at": "2025-11-29T11:52:50.487+00:00",
+        "updated_at": "2025-11-29T11:52:50.487+00:00"
+      }
+    }
+  },
+  {
+    "step": "GET /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/analytics",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "totalExpenses": 44000,
+        "totalSettlements": 0,
+        "memberBalances": {
+          "462350fe-5069-4edb-ae2f-1e15b857f7ce": 18000,
+          "15540a9a-8d56-4769-abe8-6ee795407258": -20000,
+          "f80d56a8-3b06-421f-9604-0198b872e211": 2000
+        },
+        "expenseByCategory": {
+          "transportation": 40000,
+          "food": 4000
+        }
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/settle",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": [
+        {
+          "id": "1f282943-27b7-419c-91fb-a736bd8134b6",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+          "amount": 18000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:53.442096+00:00",
+          "updated_at": "2025-11-29T11:52:53.442096+00:00"
+        },
+        {
+          "id": "2150340b-26b1-4dbf-94c8-cdfde800c3a3",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "f80d56a8-3b06-421f-9604-0198b872e211",
+          "amount": 2000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:53.442096+00:00",
+          "updated_at": "2025-11-29T11:52:53.442096+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "step": "GET /api/users/notifications",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": [
+        {
+          "id": "8c5a2137-79a5-4704-bf34-1e83431b0e5a",
+          "user_id": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "type": "expense_added",
+          "title": "New Expense Added",
+          "message": "A new expense of 2000 INR has been added to \"Goa Trip - E2E\"",
+          "data": {
+            "amount": 2000,
+            "groupId": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+            "currency": "INR",
+            "expenseId": "e2e85e2a-ec7e-45ea-a5ab-cc112340860b",
+            "groupName": "Goa Trip - E2E"
+          },
+          "read": false,
+          "created_at": "2025-11-29T11:52:50.702+00:00",
+          "updated_at": "2025-11-29T11:52:50.702+00:00",
+          "userId": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "createdAt": "2025-11-29T11:52:50.702Z",
+          "updatedAt": "2025-11-29T11:52:50.702Z"
+        },
+        {
+          "id": "76f0993a-0dd5-4b43-8bb4-141496228a43",
+          "user_id": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "type": "expense_added",
+          "title": "New Expense Added",
+          "message": "A new expense of 40000 INR has been added to \"Goa Trip - E2E\"",
+          "data": {
+            "amount": 40000,
+            "groupId": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+            "currency": "INR",
+            "expenseId": "c11c951c-7c98-4549-a67e-fe0b296f2f3b",
+            "groupName": "Goa Trip - E2E"
+          },
+          "read": false,
+          "created_at": "2025-11-29T11:52:47.888+00:00",
+          "updated_at": "2025-11-29T11:52:47.888+00:00",
+          "userId": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "createdAt": "2025-11-29T11:52:47.888Z",
+          "updatedAt": "2025-11-29T11:52:47.888Z"
+        },
+        {
+          "id": "4db48f3f-7f4a-4fe4-8b87-2b9d2a263e1a",
+          "user_id": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "type": "group_invite",
+          "title": "New Group Invitation",
+          "message": "You have been invited to join the group \"Goa Trip - E2E\"",
+          "data": {
+            "groupId": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+            "groupName": "Goa Trip - E2E",
+            "invitedBy": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          },
+          "read": false,
+          "created_at": "2025-11-29T11:52:26.221+00:00",
+          "updated_at": "2025-11-29T11:52:26.221+00:00",
+          "userId": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "createdAt": "2025-11-29T11:52:26.221Z",
+          "updatedAt": "2025-11-29T11:52:26.221Z"
+        }
+      ]
+    }
+  },
+  {
+    "step": "GET /api/users/notifications",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": []
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/members",
+    "status": 409,
+    "data": {
+      "status": "fail",
+      "type": "ConflictError",
+      "message": "User is already a member of this group",
+      "stack": "Error: User is already a member of this group\n    at GroupService.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\group.service.js:137:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.addGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:58:32)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/leave",
+    "status": 409,
+    "data": {
+      "status": "fail",
+      "type": "ConflictError",
+      "message": "Cannot leave group. You have a non-zero balance of -20000.00",
+      "stack": "Error: Cannot leave group. You have a non-zero balance of -20000.00\n    at GroupService.removeGroupMember (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\services\\group.service.js:266:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async GroupController.leaveGroup (D:\\Bharat Sharma\\Study Sphere\\Mind Expedition\\Development\\Projects\\Complete\\Smart Expense Tracking\\backend\\dist\\controllers\\group.controller.js:79:17)",
+      "isOperational": true
+    }
+  },
+  {
+    "step": "POST /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/settle",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": [
+        {
+          "id": "1f282943-27b7-419c-91fb-a736bd8134b6",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+          "amount": 18000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:53.442096+00:00",
+          "updated_at": "2025-11-29T11:52:53.442096+00:00"
+        },
+        {
+          "id": "2150340b-26b1-4dbf-94c8-cdfde800c3a3",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "f80d56a8-3b06-421f-9604-0198b872e211",
+          "amount": 2000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:53.442096+00:00",
+          "updated_at": "2025-11-29T11:52:53.442096+00:00"
+        },
+        {
+          "id": "7bebacef-9b45-460c-a6a6-cd7257b65a77",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+          "amount": 18000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:58.894601+00:00",
+          "updated_at": "2025-11-29T11:52:58.894601+00:00"
+        },
+        {
+          "id": "5f190034-7a69-4dfc-8aa1-02eca2e6b236",
+          "group_id": "9486e8da-fc25-46bd-b1b2-df134a60c61b",
+          "from_user": "15540a9a-8d56-4769-abe8-6ee795407258",
+          "to_user": "f80d56a8-3b06-421f-9604-0198b872e211",
+          "amount": 2000,
+          "status": "pending",
+          "created_at": "2025-11-29T11:52:58.894601+00:00",
+          "updated_at": "2025-11-29T11:52:58.894601+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "step": "GET /api/groups/9486e8da-fc25-46bd-b1b2-df134a60c61b/analytics",
+    "status": 200,
+    "data": {
+      "status": "success",
+      "data": {
+        "totalExpenses": 44000,
+        "totalSettlements": 40000,
+        "memberBalances": {
+          "462350fe-5069-4edb-ae2f-1e15b857f7ce": 18000,
+          "15540a9a-8d56-4769-abe8-6ee795407258": -20000,
+          "f80d56a8-3b06-421f-9604-0198b872e211": 2000
+        },
+        "expenseByCategory": {
+          "transportation": 40000,
+          "food": 4000
+        }
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "8d4aedc2-4988-4631-a470-13ae8359a56b",
+        "name": "Weekend Trip - E2E",
+        "description": "Second group test",
+        "created_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "currency": "INR",
+        "settings": {
+          "requireApproval": false,
+          "defaultSplitType": "equal",
+          "allowMemberInvites": true
+        },
+        "created_at": "2025-11-29T11:53:00.556+00:00",
+        "updated_at": "2025-11-29T11:53:00.556+00:00",
+        "members": [
+          {
+            "id": "3676708e-53c2-4ac4-9456-2264c3bbb5ae",
+            "group_id": "8d4aedc2-4988-4631-a470-13ae8359a56b",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+            "role": "admin",
+            "joined_at": "2025-11-29T11:53:00.739+00:00"
+          }
+        ],
+        "expenses": [],
+        "settlements": []
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/8d4aedc2-4988-4631-a470-13ae8359a56b/members",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "029db290-3f71-4e95-96be-237048bc5dd4",
+        "group_id": "8d4aedc2-4988-4631-a470-13ae8359a56b",
+        "user_id": "15540a9a-8d56-4769-abe8-6ee795407258",
+        "role": "member",
+        "joined_at": "2025-11-29T11:53:01.953+00:00",
+        "isNewUser": false
+      }
+    }
+  },
+  {
+    "step": "POST /api/groups/8d4aedc2-4988-4631-a470-13ae8359a56b/expenses",
+    "status": 201,
+    "data": {
+      "status": "success",
+      "data": {
+        "id": "45647a3e-d84e-451a-ac2f-2aaf93774f38",
+        "group_id": "8d4aedc2-4988-4631-a470-13ae8359a56b",
+        "paid_by": "462350fe-5069-4edb-ae2f-1e15b857f7ce",
+        "amount": 3000,
+        "currency": "INR",
+        "category": "food",
+        "description": "Weekend Lunch",
+        "date": "2025-11-29T11:53:06.894+00:00",
+        "location": null,
+        "tags": null,
+        "receipt_url": null,
+        "splits": [
+          {
+            "amount": 1500,
+            "status": "pending",
+            "user_id": "462350fe-5069-4edb-ae2f-1e15b857f7ce"
+          },
+          {
+            "amount": 1500,
+            "status": "pending",
+            "user_id": "15540a9a-8d56-4769-abe8-6ee795407258"
+          }
+        ],
+        "created_at": "2025-11-29T11:53:07.705+00:00",
+        "updated_at": "2025-11-29T11:53:07.705+00:00"
+      }
+    }
+  }
+]

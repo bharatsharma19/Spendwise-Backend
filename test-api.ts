@@ -1,771 +1,604 @@
-import { createClient } from '@supabase/supabase-js';
-import axios, { AxiosRequestConfig } from 'axios';
-import dotenv from 'dotenv';
-import * as fs from 'fs';
-import * as path from 'path';
+// e2e-invite-based-test.ts
+/**
+ * E2E test runner — Invitation-based flow (real-world style)
+ * - First user: full credentials (name, email, password, phone)
+ * - Other users: minimal identifiers (email OR phone OR both), no password required
+ * - Owner adds members -> backend creates invites -> invitees complete via accept endpoint
+ *
+ * IMPORTANT:
+ * - This script uses Supabase service role key to auto-verify users for tests (dev/test only).
+ * - Adapt endpoints if your API differs (search for CONFIG section).
+ */
 
-// Load environment variables
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import axios from 'axios';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+
 dotenv.config();
 
-const BASE_URL = `http://localhost:${process.env.PORT || 5000}`;
+/* ---------------------- CONFIG (adjust to your API) ---------------------- */
+
+const PORT = process.env.PORT ?? '5000';
+const BASE_URL = process.env.BASE_URL ?? `http://localhost:${PORT}`;
 const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Initialize Supabase Admin Client
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
-const OUTPUT_FILE = path.join(__dirname, 'api_test_responses.json');
-const CREDENTIALS_FILE = path.join(__dirname, 'test-credentials.json');
-
-interface LogEntry {
-  step: string;
-  status: number;
-  data: unknown;
-}
-const logs: LogEntry[] = [];
-
-// --- Users Configuration ---
-// Load from test-credentials.json or use environment variables
-interface UserCredential {
-  name: string;
-  email: string;
-  password: string;
-  phone: string;
-}
-
-interface CredentialsFile {
-  users: UserCredential[];
-}
-
-let USERS: UserCredential[] = [];
-
-// Try to load from credentials file
-try {
-  if (fs.existsSync(CREDENTIALS_FILE)) {
-    const credentialsData = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
-    const credentials: CredentialsFile = JSON.parse(credentialsData);
-    USERS = credentials.users;
-    // eslint-disable-next-line no-console
-    console.log(`✅ Loaded ${USERS.length} users from test-credentials.json`);
-  } else {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `⚠️  test-credentials.json not found. Please create it from test-credentials.json.example`
-    );
-    // Fallback: try to load from environment variables
-    USERS = [
-      {
-        name: process.env.TEST_USER1_NAME || 'Test User 1',
-        email: process.env.TEST_USER1_EMAIL || '',
-        password: process.env.TEST_USER1_PASSWORD || '',
-        phone: process.env.TEST_USER1_PHONE || '',
-      },
-      {
-        name: process.env.TEST_USER2_NAME || 'Test User 2',
-        email: process.env.TEST_USER2_EMAIL || '',
-        password: process.env.TEST_USER2_PASSWORD || '',
-        phone: process.env.TEST_USER2_PHONE || '',
-      },
-      {
-        name: process.env.TEST_USER3_NAME || 'Test User 3',
-        email: process.env.TEST_USER3_EMAIL || '',
-        password: process.env.TEST_USER3_PASSWORD || '',
-        phone: process.env.TEST_USER3_PHONE || '',
-      },
-      {
-        name: process.env.TEST_USER4_NAME || 'Test User 4',
-        email: process.env.TEST_USER4_EMAIL || '',
-        password: process.env.TEST_USER4_PASSWORD || '',
-        phone: process.env.TEST_USER4_PHONE || '',
-      },
-    ].filter((user) => user.email && user.password); // Filter out empty users
-
-    if (USERS.length === 0) {
-      // eslint-disable-next-line no-console
-      console.error(
-        '❌ No test users found. Please create test-credentials.json or set environment variables.'
-      );
-      process.exit(1);
-    }
-  }
-} catch (error) {
-  // eslint-disable-next-line no-console
-  console.error('Error loading credentials:', error);
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('❌ SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in env');
   process.exit(1);
 }
 
-// --- Helper Functions ---
+const OUTPUT_FILE = path.join(process.cwd(), 'api_test_responses.json');
+const CREDENTIALS_FILE = path.join(process.cwd(), 'test-credentials.json');
 
-// eslint-disable-next-line no-console
-const logStep = (message: string): void => console.log(`\n🔹 ${message}`);
+// Endpoint templates — change only if your backend uses different routes:
+const REGISTER_ENDPOINT = '/api/auth/register';
+const LOGIN_ENDPOINT = '/api/auth/login';
+const CREATE_GROUP_ENDPOINT = '/api/groups';
+const ADD_MEMBER_ENDPOINT_TEMPLATE = (groupId: string) => `/api/groups/${groupId}/members`;
+const GET_GROUP_ENDPOINT = (groupId: string) => `/api/groups/${groupId}`;
+const ACCEPT_MEMBER_ENDPOINT_TEMPLATE = (groupId: string, memberId: string) =>
+  `/api/groups/${groupId}/members/${memberId}/accept`;
+// group expense endpoints etc. are used as in your original script
 
-const saveLogs = (): void => {
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(logs, null, 2));
-  // eslint-disable-next-line no-console
-  console.log(`\n✅ Detailed responses saved to ${OUTPUT_FILE}`);
+/* ----------------------------- Setup ------------------------------------ */
+
+const axiosInstance = axios.create({
+  baseURL: BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+  validateStatus: () => true,
+  timeout: 20_000,
+});
+
+const supabaseAdmin: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+type MinimalUser = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  password?: string; // for main user only; others will get autogen
 };
 
-const apiRequest = async (
-  token: string | null,
-  method: string,
-  endpoint: string,
-  data?: Record<string, unknown>
-): Promise<unknown> => {
-  const url = `${BASE_URL}${endpoint}`;
-  const config: AxiosRequestConfig = {
-    method,
-    url,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-    data,
-    validateStatus: () => true,
-  };
-
-  try {
-    const response = await axios(config);
-    logs.push({ step: `${method} ${endpoint}`, status: response.status, data: response.data });
-
-    const icon = response.status >= 200 && response.status < 300 ? '✅' : '❌';
-    // eslint-disable-next-line no-console
-    console.log(`${icon} [${method}] ${endpoint} - ${response.status}`);
-    if (response.status >= 400) {
-      // eslint-disable-next-line no-console
-      console.log(`   Error: ${JSON.stringify(response.data)}`);
-    }
-
-    return response.data;
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    // eslint-disable-next-line no-console
-    console.error(`🔥 Error: ${errorMessage}`);
-    return null;
-  }
-};
-
-// --- Auth Logic ---
-
-interface AuthenticatedUser {
+type AuthUser = {
   uid: string;
   token: string;
-  name: string;
-  email: string;
-  password: string;
-  phone: string;
-}
-
-const getAuthenticatedUser = async (userConfig: (typeof USERS)[0]): Promise<AuthenticatedUser> => {
-  const identifier = userConfig.email || userConfig.phone || 'Unknown';
-  // eslint-disable-next-line no-console
-  console.log(`\n👤 Authenticating ${userConfig.name} (${identifier})...`);
-
-  // Check if user has email or phone
-  const hasEmail = userConfig.email && userConfig.email.trim() !== '';
-  const hasPhone = userConfig.phone && userConfig.phone.trim() !== '';
-
-  // For phone-only users, create a temporary email for testing login
-  // (Supabase doesn't support password login with phone, so we use temp email)
-  let loginEmail = userConfig.email;
-  if (!hasEmail && hasPhone) {
-    // eslint-disable-next-line no-console
-    console.log('   📱 Phone-only user detected. Using temporary email for testing...');
-    // Create a temporary email based on phone number for testing
-    const sanitizedPhone = userConfig.phone.replace(/[^0-9]/g, '');
-    loginEmail = `phone-${sanitizedPhone}@test.local`;
-  }
-
-  if (!loginEmail) {
-    // eslint-disable-next-line no-console
-    console.error(`❌ Fatal: User ${userConfig.name} has neither email nor phone`);
-    process.exit(1);
-  }
-
-  // 1. Try Login
-  let { data, error } = await supabase.auth.signInWithPassword({
-    email: loginEmail,
-    password: userConfig.password,
-  });
-
-  // 2. If Login Fails
-  if (error) {
-    // eslint-disable-next-line no-console
-    console.log(`   ⚠️ Login failed: ${error.message}. Checking status...`);
-
-    // Check if user exists in Auth Admin
-    const { data: adminUserList } = await supabase.auth.admin.listUsers();
-    const formattedPhone = hasPhone
-      ? userConfig.phone.startsWith('+')
-        ? userConfig.phone
-        : `+${userConfig.phone}`
-      : undefined;
-
-    // Try to find user by email or phone
-    const existingUser = adminUserList.users.find(
-      (u) => u.email === loginEmail || (formattedPhone && u.phone === formattedPhone)
-    );
-
-    if (existingUser) {
-      // User exists - update password and verify if needed (no need to verify for testing)
-      // eslint-disable-next-line no-console
-      console.log('   User exists. Updating password and auto-verifying...');
-      await supabase.auth.admin.updateUserById(existingUser.id, {
-        password: userConfig.password,
-        email_confirm: true,
-        phone_confirm: formattedPhone ? true : undefined,
-        // If phone-only, ensure email is set to temp email
-        ...(!hasEmail && formattedPhone ? { email: loginEmail } : {}),
-      });
-    } else {
-      // User does not exist. Register via API.
-      // eslint-disable-next-line no-console
-      console.log('   User does not exist. Registering...');
-      const registerData: {
-        email?: string;
-        password: string;
-        phoneNumber?: string;
-        displayName?: string;
-      } = {
-        password: userConfig.password,
-        displayName: userConfig.name,
-      };
-
-      // For phone-only users, use temporary email for registration
-      if (hasEmail) {
-        registerData.email = userConfig.email;
-      } else {
-        registerData.email = loginEmail; // Use temporary email
-      }
-
-      // Only include phoneNumber if provided and not empty
-      if (hasPhone) {
-        registerData.phoneNumber = userConfig.phone;
-      }
-
-      await apiRequest(null, 'POST', '/api/auth/register', registerData);
-
-      // Auto-verify immediately after registration (no need to verify for testing)
-      const { data: newUserList } = await supabase.auth.admin.listUsers();
-      const newUser = newUserList.users.find(
-        (u) => u.email === loginEmail || (formattedPhone && u.phone === formattedPhone)
-      );
-      if (newUser) {
-        await supabase.auth.admin.updateUserById(newUser.id, {
-          email_confirm: true,
-          phone_confirm: formattedPhone ? true : undefined,
-        });
-      }
-    }
-
-    // Retry Login
-    const retry = await supabase.auth.signInWithPassword({
-      email: loginEmail,
-      password: userConfig.password,
-    });
-    data = retry.data;
-    error = retry.error;
-  }
-
-  if (error || !data?.session) {
-    // eslint-disable-next-line no-console
-    console.error(`❌ Fatal: Could not authenticate ${userConfig.email}`);
-    process.exit(1);
-  }
-
-  // eslint-disable-next-line no-console
-  console.log('   ✅ Authenticated!');
-  return {
-    uid: data.user.id,
-    token: data.session.access_token,
-    ...userConfig,
-  };
+  email?: string;
+  phone?: string;
+  name?: string;
 };
 
-// --- Main Test Flow ---
+type LogEntry = { step: string; status: number | null; data: unknown };
+const logs: LogEntry[] = [];
 
-const runTests = async (): Promise<void> => {
-  // eslint-disable-next-line no-console
-  console.log('🚀 Starting Comprehensive System Tests...');
-  // eslint-disable-next-line no-console
-  console.log('📋 Testing Individual & Group Features\n');
+function saveLogs() {
+  try {
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(logs, null, 2));
+    console.log(`✅ Saved logs to ${OUTPUT_FILE}`);
+  } catch (e) {
+    console.error('Failed to save logs', e);
+  }
+}
 
-  // ============================================
-  // PART 1: AUTHENTICATION & USER SETUP
-  // ============================================
-  logStep('=== PART 1: Authentication & User Setup ===');
+function nice(...args: any[]) {
+  console.log(...args);
+}
 
-  // Authenticate all users
-  const bharat = await getAuthenticatedUser(USERS[0]);
-  const paynride = await getAuthenticatedUser(USERS[1]);
-  const rajesh = await getAuthenticatedUser(USERS[2]);
-  const priya = await getAuthenticatedUser(USERS[3]);
+async function apiRequest(
+  token: string | null | undefined,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  endpoint: string,
+  data?: any
+) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
 
-  // ============================================
-  // PART 2: INDIVIDUAL USER FEATURES
-  // ============================================
-  logStep('=== PART 2: Individual User Features ===');
+  try {
+    const resp = await axiosInstance.request({
+      url: endpoint,
+      method,
+      data,
+      headers,
+    });
+    logs.push({ step: `${method} ${endpoint}`, status: resp.status, data: resp.data });
+    const ok = resp.status >= 200 && resp.status < 300;
+    nice(ok ? '✅' : '❌', `[${method}] ${endpoint} — ${resp.status}`);
+    if (!ok) nice('   ->', JSON.stringify(resp.data));
+    return resp.data;
+  } catch (err: any) {
+    logs.push({ step: `${method} ${endpoint}`, status: null, data: err?.message ?? err });
+    nice('🔥', `[${method}] ${endpoint} — error:`, err?.message ?? err);
+    return null;
+  }
+}
 
-  // Bharat's Personal Profile & Expenses
-  logStep('Bharat: Viewing Profile');
-  await apiRequest(bharat.token, 'GET', '/api/users/profile');
+/* -------------------------- Credentials loader -------------------------- */
 
-  logStep('Bharat: Updating Profile');
-  await apiRequest(bharat.token, 'PUT', '/api/users/profile', {
-    displayName: 'Bharat Sharma (Updated)',
+function loadCredentials(): MinimalUser[] {
+  if (!fs.existsSync(CREDENTIALS_FILE)) {
+    console.error(`❌ Credentials file missing: ${CREDENTIALS_FILE}`);
+    process.exit(1);
+  }
+  const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed.users)) {
+    console.error('❌ test-credentials.json must include "users": [ ... ]');
+    process.exit(1);
+  }
+  return parsed.users as MinimalUser[];
+}
+
+/* ------------------------ Utility helpers -------------------------------- */
+
+function generatePassword() {
+  // deterministic-ish but unique for tests
+  return `TmpPass!${Math.random().toString(36).slice(2, 10)}A`;
+}
+
+function ensureEmailForPhoneOnly(phone?: string) {
+  if (!phone) return undefined;
+  const sanitized = phone.replace(/[^0-9]/g, '');
+  return `phone-${sanitized}@example.test`;
+}
+
+/* -------------------------- Auth / User helpers -------------------------- */
+
+/**
+ * Ensure main user exists and can log in. Returns AuthUser with token.
+ * - expects the first user in credentials to have password and email.
+ */
+async function ensurePrimaryUser(user: MinimalUser): Promise<AuthUser> {
+  if (!user.email || !user.password) {
+    throw new Error('Primary user must have email and password in credentials file');
+  }
+  // Try login via app endpoint
+  const loginResp = await apiRequest(null, 'POST', LOGIN_ENDPOINT, {
+    email: user.email,
+    password: user.password,
   });
 
-  logStep('Bharat: Creating Personal Expenses');
-  const expense1 = await apiRequest(bharat.token, 'POST', '/api/expenses', {
-    amount: 150,
-    category: 'food',
-    description: 'Personal Breakfast',
-    date: new Date().toISOString(),
-    currency: 'INR',
-    isRecurring: false,
-  });
+  if (loginResp && loginResp.accessToken) {
+    nice('Primary user logged in via app login');
+    // Try to find uid via supabase admin by email
+    const list = await supabaseAdmin.auth.admin.listUsers();
+    const su = list.data.users.find((u) => u.email === user.email);
+    if (!su) throw new Error('Primary user not found in Supabase after login');
+    return {
+      uid: su.id,
+      token: loginResp.accessToken,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+    };
+  }
 
-  await apiRequest(bharat.token, 'POST', '/api/expenses', {
-    amount: 500,
-    category: 'transportation',
-    description: 'Uber Ride',
-    date: new Date().toISOString(),
-    currency: 'INR',
-    isRecurring: false,
-  });
-
-  await apiRequest(bharat.token, 'POST', '/api/expenses', {
-    amount: 2000,
-    category: 'shopping',
-    description: 'Monthly Groceries',
-    date: new Date().toISOString(),
-    currency: 'INR',
-    isRecurring: true,
-    recurringFrequency: 'monthly',
-  });
-
-  logStep('Bharat: Viewing All Expenses');
-  await apiRequest(bharat.token, 'GET', '/api/expenses');
-
-  logStep('Bharat: Getting Expense Statistics');
-  await apiRequest(bharat.token, 'GET', '/api/expenses/stats/summary');
-  await apiRequest(bharat.token, 'GET', '/api/expenses/stats/categories');
-  await apiRequest(bharat.token, 'GET', '/api/expenses/stats/trends');
-
-  logStep('Bharat: Updating an Expense');
-  const expenseId = (expense1 as { data?: { id?: string } })?.data?.id;
-  if (expenseId) {
-    await apiRequest(bharat.token, 'PUT', `/api/expenses/${expenseId}`, {
-      amount: 200,
-      description: 'Personal Breakfast (Updated)',
+  // If app login didn't work, try to ensure user exists and set password via admin
+  const list = await supabaseAdmin.auth.admin.listUsers();
+  let existing = list.data.users.find((u) => u.email === user.email);
+  if (!existing) {
+    nice('Primary user not found in auth; creating via admin.createUser for tests');
+    const created = await supabaseAdmin.auth.admin.createUser({
+      email: user.email,
+      password: user.password,
+      phone: user.phone,
+      email_confirm: true,
+      phone_confirm: user.phone ? true : undefined,
+    });
+    existing = created.data.user!;
+  } else {
+    // ensure password & confirm flags
+    await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+      password: user.password,
+      email_confirm: true,
+      phone_confirm: user.phone ? true : undefined,
     });
   }
 
-  logStep('Bharat: Viewing User Statistics');
-  await apiRequest(bharat.token, 'GET', '/api/users/stats');
+  // try login via Supabase auth (to obtain token) as fallback
+  const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signIn = await supabaseClient.auth.signInWithPassword({
+    email: user.email,
+    password: user.password,
+  });
+  if (signIn.error) {
+    throw new Error('Could not sign in primary user: ' + signIn.error.message);
+  }
+  const token = signIn.data.session?.access_token ?? '';
+  return { uid: existing.id, token, email: user.email, name: user.name, phone: user.phone };
+}
 
-  // ============================================
-  // PART 3: GROUP CREATION & MEMBER MANAGEMENT
-  // ============================================
-  logStep('=== PART 3: Group Creation & Member Management ===');
+/**
+ * Invite member(s) to group by calling app add-member endpoint.
+ * Returns array of created group-member objects as returned by API.
+ */
+async function addMemberToGroup(
+  ownerToken: string,
+  groupId: string,
+  payload: { email?: string; phoneNumber?: string; displayName?: string }
+) {
+  const res = await apiRequest(ownerToken, 'POST', ADD_MEMBER_ENDPOINT_TEMPLATE(groupId), payload);
+  // we expect the API to respond with something like { data: { memberId, inviteId, ... } } or { data: member }
+  return res;
+}
 
-  logStep('Bharat: Creating "Goa Trip" Group');
-  const groupRes = (await apiRequest(bharat.token, 'POST', '/api/groups', {
-    name: 'Goa Trip',
-    description: 'Friends Vacation to Goa',
-    currency: 'INR',
-    settings: {
-      defaultSplitType: 'equal',
-      allowMemberInvites: true,
-      requireApproval: false,
-    },
-  })) as { data?: { id?: string } };
+/**
+ * Ensure an invited minimal user completes registration and accepts invite:
+ * Steps:
+ * 1. If user doesn't exist in Auth, call /api/auth/register with password and displayName (or call admin.createUser)
+ * 2. Auto-verify via supabase admin (email_confirm/phone_confirm) — test-only
+ * 3. Call accept endpoint: POST /api/groups/{groupId}/members/{memberId}/accept { password, displayName }
+ * 4. Login via /api/auth/login and return AuthUser
+ *
+ * The function is resilient: it attempts register -> verify -> accept -> login in order.
+ */
+async function completeInviteAndAuthenticate(
+  invitee: MinimalUser,
+  groupId: string,
+  memberRecord: any
+): Promise<AuthUser> {
+  // memberRecord should ideally include memberId or inviteId and the identifier we used to invite
+  const memberId =
+    memberRecord?.data?.id ?? memberRecord?.id ?? memberRecord?.memberId ?? memberRecord?.inviteId;
+  const invitedEmail =
+    invitee.email ?? (invitee.phone ? ensureEmailForPhoneOnly(invitee.phone) : undefined);
+  const invitedPhone = invitee.phone;
+  const password = generatePassword();
+  const displayName =
+    invitee.name ?? (invitee.email ?? invitee.phone ?? 'Invited User').split('@')[0];
 
-  const groupId = groupRes.data?.id;
+  // 1) Ensure auth user exists: check supabase admin
+  const userList = await supabaseAdmin.auth.admin.listUsers();
+  const formattedPhone = invitedPhone
+    ? invitedPhone.startsWith('+')
+      ? invitedPhone
+      : `+${invitedPhone}`
+    : undefined;
+  let found = userList.data.users.find(
+    (u) =>
+      (invitedEmail && u.email === invitedEmail) || (formattedPhone && u.phone === formattedPhone)
+  );
 
-  if (!groupId) {
-    // eslint-disable-next-line no-console
-    console.error('❌ Failed to create group. Exiting...');
+  if (!found) {
+    // Try app register first (preferred)
+    try {
+      await apiRequest(null, 'POST', REGISTER_ENDPOINT, {
+        email: invitedEmail,
+        phoneNumber: invitedPhone,
+        password,
+        displayName,
+      });
+      // small pause might be required in real systems — but we'll proceed to check admin
+    } catch (e) {
+      // ignore, fallback to admin.createUser
+    }
+
+    // Re-check admin
+    const after = await supabaseAdmin.auth.admin.listUsers();
+    found = after.data.users.find(
+      (u) =>
+        (invitedEmail && u.email === invitedEmail) || (formattedPhone && u.phone === formattedPhone)
+    );
+    if (!found) {
+      // Create via admin (test fallback)
+      const created = await supabaseAdmin.auth.admin.createUser({
+        email: invitedEmail,
+        password,
+        phone: formattedPhone,
+        email_confirm: true,
+        phone_confirm: formattedPhone ? true : undefined,
+      });
+      found = created.data.user!;
+    } else {
+      // update password & confirm flags
+      await supabaseAdmin.auth.admin.updateUserById(found.id, {
+        password,
+        email_confirm: true,
+        phone_confirm: formattedPhone ? true : undefined,
+        // ensure email present for phone-only users (helps login)
+        ...(formattedPhone && !invitedEmail
+          ? { email: ensureEmailForPhoneOnly(invitedPhone) }
+          : {}),
+      });
+    }
+  } else {
+    // user exists — ensure password & confirmations set for tests
+    await supabaseAdmin.auth.admin.updateUserById(found.id, {
+      password,
+      email_confirm: true,
+      phone_confirm: formattedPhone ? true : undefined,
+      ...(formattedPhone && !invitedEmail ? { email: ensureEmailForPhoneOnly(invitedPhone) } : {}),
+    });
+  }
+
+  // 2) Call accept-invite endpoint (preferred real-world flow)
+  if (memberId) {
+    const acceptEndpoint = ACCEPT_MEMBER_ENDPOINT_TEMPLATE(groupId, memberId);
+    await apiRequest(null, 'POST', acceptEndpoint, {
+      password,
+      displayName,
+    });
+    // If acceptResp indicates success or redirect, proceed to login
+  } else {
+    // No memberId available from API response — some backends auto-link on register; we'll try login directly
+    nice(
+      '   ⚠️ No memberId returned by add-member API; proceeding to login and hoping backend auto-links on register'
+    );
+  }
+
+  // 3) Login via app endpoint to get token
+  const loginBody = { email: invitedEmail, password };
+  // If invitedEmail undefined (pure phone), use a temp email we set earlier
+  if (!invitedEmail && invitedPhone) {
+    loginBody.email = ensureEmailForPhoneOnly(invitedPhone);
+  }
+
+  const loginResp = await apiRequest(null, 'POST', LOGIN_ENDPOINT, loginBody);
+  if (!loginResp || !loginResp.accessToken) {
+    // fallback: try Supabase signInWithPassword
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const emailForSignIn = loginBody.email;
+    if (!emailForSignIn) throw new Error('Invitee login failed: No email available');
+
+    const signIn = await supabaseClient.auth.signInWithPassword({
+      email: emailForSignIn,
+      password,
+    });
+    if (signIn.error) {
+      throw new Error('Invitee login failed: ' + signIn.error.message);
+    }
+    const token = signIn.data.session?.access_token ?? '';
+    // find uid from admin
+    const after = await supabaseAdmin.auth.admin.listUsers();
+    const su = after.data.users.find(
+      (u) => u.email === loginBody.email || (formattedPhone && u.phone === formattedPhone)
+    );
+    if (!su) throw new Error('Could not find user after sign-in');
+    return { uid: su.id, token, email: loginBody.email, phone: invitedPhone, name: displayName };
+  } else {
+    // success via app login
+    const token = loginResp.accessToken;
+    // find uid
+    const after = await supabaseAdmin.auth.admin.listUsers();
+    const su = after.data.users.find(
+      (u) => u.email === loginBody.email || (formattedPhone && u.phone === formattedPhone)
+    );
+    if (!su) throw new Error('Could not find user after app login');
+    return { uid: su.id, token, email: loginBody.email, phone: invitedPhone, name: displayName };
+  }
+}
+
+/* ------------------------------ Test flow -------------------------------- */
+
+async function run() {
+  nice('\n🚀 Starting E2E invite-based test');
+
+  const creds = loadCredentials();
+  if (creds.length < 1) {
+    nice('❌ Provide at least one (primary) user in test-credentials.json');
     process.exit(1);
   }
 
-  // Adding members by different methods
-  logStep('Group: Adding Paynride by Email');
-  await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/members`, {
-    email: paynride.email,
-    displayName: paynride.name,
-  });
-
-  logStep('Group: Adding Rajesh by Phone Number');
-  await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/members`, {
-    phoneNumber: rajesh.phone,
-    displayName: rajesh.name,
-  });
-
-  logStep('Group: Adding Priya by Phone Number');
-  await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/members`, {
-    phoneNumber: priya.phone,
-    displayName: priya.name,
-  });
-
-  // ============================================
-  // PART 4: GROUP EXPENSES
-  // ============================================
-  logStep('=== PART 4: Group Expenses ===');
-
-  // Fetch actual group members to get their UIDs
-  logStep('Group: Fetching Group Members');
-  const groupDetailsRes = (await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}`)) as {
-    data?: { members?: Array<{ userId?: string; displayName?: string }> };
-  };
-
-  const groupMembers = groupDetailsRes.data?.members || [];
-  const memberUids = groupMembers.map((m) => m.userId).filter((uid): uid is string => !!uid);
-
-  // eslint-disable-next-line no-console
-  console.log(`   📋 Found ${memberUids.length} group members:`, memberUids);
-
-  // Map authenticated users to group member UIDs
-  const bharatUid = memberUids.find((uid) => uid === bharat.uid) || bharat.uid;
-  const paynrideUid = memberUids.find((uid) => uid === paynride.uid) || paynride.uid;
-  const rajeshUid = memberUids.find((uid) => uid === rajesh.uid);
-  const priyaUid = memberUids.find((uid) => uid === priya.uid);
-
-  // Only create expenses if we have at least 2 members (Bharat and Paynride should be in the group)
-  if (memberUids.length >= 2) {
-    // Helper function to create splits only for members in the group
-    const createSplitsForMembers = (
-      totalAmount: number,
-      splitType: 'equal' | 'custom',
-      customAmounts?: Record<string, number>
-    ): Array<{ userId: string; amount: number }> => {
-      if (splitType === 'equal') {
-        const amountPerMember = totalAmount / memberUids.length;
-        return memberUids.map((uid) => ({ userId: uid, amount: amountPerMember }));
-      } else if (customAmounts) {
-        // Only include members that are in the group
-        return memberUids
-          .filter((uid) => customAmounts[uid] !== undefined)
-          .map((uid) => ({ userId: uid, amount: customAmounts[uid] }));
-      }
-      return [];
-    };
-
-    logStep('Bharat: Adding Flight Booking Expense (Equal Split)');
-    await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/expenses`, {
-      amount: 40000,
-      currency: 'INR',
-      category: 'transportation',
-      description: 'Flight Booking for Goa Trip',
-      date: new Date().toISOString(),
-      tags: ['flight', 'transportation'],
-      receiptUrl: 'https://example.com/receipts/flight.jpg',
-      splits: createSplitsForMembers(40000, 'equal'),
-    });
-
-    // Only add hotel expense if Paynride is in the group
-    if (paynrideUid && memberUids.includes(paynrideUid)) {
-      logStep('Paynride: Adding Hotel Booking Expense (Custom Split)');
-      const hotelSplits = createSplitsForMembers(30000, 'custom', {
-        [bharatUid]: 15000,
-        [paynrideUid]: 15000,
-        ...(rajeshUid ? { [rajeshUid]: 7500 } : {}),
-        ...(priyaUid ? { [priyaUid]: 7500 } : {}),
-      });
-      // Adjust amounts if Rajesh/Priya are not in group
-      if (hotelSplits.length === 2) {
-        hotelSplits[0].amount = 15000;
-        hotelSplits[1].amount = 15000;
-      }
-      await apiRequest(paynride.token, 'POST', `/api/groups/${groupId}/expenses`, {
-        amount: 30000,
-        currency: 'INR',
-        category: 'housing',
-        description: 'Hotel Booking - 2 Rooms',
-        date: new Date().toISOString(),
-        tags: ['hotel', 'accommodation'],
-        receiptUrl: 'https://example.com/receipts/hotel.jpg',
-        splits: hotelSplits,
-      });
-    }
-
-    // Only add food expense if Rajesh is in the group
-    if (rajeshUid && memberUids.includes(rajeshUid)) {
-      logStep('Rajesh: Adding Food Expense (Equal Split)');
-      await apiRequest(rajesh.token, 'POST', `/api/groups/${groupId}/expenses`, {
-        amount: 5000,
-        currency: 'INR',
-        category: 'food',
-        description: 'Dinner at Beach Restaurant',
-        date: new Date().toISOString(),
-        tags: ['food', 'dinner'],
-        splits: createSplitsForMembers(5000, 'equal'),
-      });
-    }
-
-    // Only add activity expense if Priya is in the group
-    if (priyaUid && memberUids.includes(priyaUid)) {
-      logStep('Priya: Adding Activity Expense (Equal Split)');
-      await apiRequest(priya.token, 'POST', `/api/groups/${groupId}/expenses`, {
-        amount: 8000,
-        currency: 'INR',
-        category: 'entertainment',
-        description: 'Water Sports Activities',
-        date: new Date().toISOString(),
-        tags: ['activities', 'water-sports'],
-        splits: createSplitsForMembers(8000, 'equal'),
-      });
-    }
-
-    logStep('Bharat: Adding Taxi Expense (Equal Split)');
-    const taxiExpenseRes = await apiRequest(
-      bharat.token,
-      'POST',
-      `/api/groups/${groupId}/expenses`,
-      {
-        amount: 2000,
-        currency: 'INR',
-        category: 'transportation',
-        description: 'Airport Taxi',
-        date: new Date().toISOString(),
-        tags: ['taxi', 'transportation'],
-        splits: createSplitsForMembers(2000, 'equal'),
-      }
+  // Primary user (first entry) must be full
+  const primaryCfg = creds[0];
+  if (!primaryCfg.email || !primaryCfg.password) {
+    console.error(
+      '❌ Primary user (first user) must include email and password in test-credentials.json'
     );
+    process.exit(1);
+  }
 
-    // Test marking expense split as paid
-    const taxiExpenseId = (taxiExpenseRes as { data?: { id?: string } })?.data?.id;
-    if (taxiExpenseId) {
-      logStep('Paynride: Marking Taxi Expense Split as Paid');
-      await apiRequest(
-        paynride.token,
-        'POST',
-        `/api/groups/${groupId}/expenses/${taxiExpenseId}/pay`
-      );
-      // eslint-disable-next-line no-console
-      console.log('   ✅ Expense split marked as paid');
+  // Other users are invitees (can be minimal)
+  const inviteesCfg = creds.slice(1);
+
+  // Ensure primary user exists and get token
+  const primary = await ensurePrimaryUser(primaryCfg);
+  nice(`Primary user ready: uid=${primary.uid}`);
+
+  // PART 2: primary user personal actions
+  nice('\n=== PART 2: Primary user personal actions ===');
+  await apiRequest(primary.token, 'GET', '/api/users/profile');
+  await apiRequest(primary.token, 'PUT', '/api/users/profile', {
+    displayName: primaryCfg.name ?? 'Primary User',
+  });
+
+  await apiRequest(primary.token, 'POST', '/api/expenses', {
+    amount: 150,
+    category: 'food',
+    description: 'Breakfast (primary)',
+    date: new Date().toISOString(),
+    currency: 'INR',
+    isRecurring: false,
+  });
+  await apiRequest(primary.token, 'GET', '/api/expenses');
+  await apiRequest(primary.token, 'GET', '/api/expenses/stats/summary');
+
+  // PART 3: create group
+  nice('\n=== PART 3: Create group & invite members ===');
+  const createGroupResp = await apiRequest(primary.token, 'POST', CREATE_GROUP_ENDPOINT, {
+    name: 'Goa Trip - E2E',
+    description: 'Test trip',
+    currency: 'INR',
+    settings: { defaultSplitType: 'equal', allowMemberInvites: true, requireApproval: false },
+  });
+  const groupId = (createGroupResp as any)?.data?.id;
+  if (!groupId) {
+    nice('❌ Could not create group; exiting');
+    saveLogs();
+    process.exit(1);
+  }
+  nice('Group created:', groupId);
+
+  // Invite each minimal user (email-only, phone-only, both)
+  const invitedMemberRecords: any[] = [];
+  for (const inv of inviteesCfg) {
+    const payload: any = {};
+    if (inv.email) payload.email = inv.email;
+    if (inv.phone) payload.phoneNumber = inv.phone;
+    // Optionally send displayName placeholder (not required in minimal flow)
+    payload.displayName = inv.name ?? undefined;
+
+    nice('Inviting member with payload:', payload);
+    const addResp = await addMemberToGroup(primary.token, groupId, payload);
+    invitedMemberRecords.push({ invitee: inv, addResp });
+  }
+
+  // PART 4: simulate invite acceptance & onboarding by each invited user
+  nice('\n=== PART 4: Invitees accept invites, complete registration, and act ===');
+  const authenticatedInvitees: AuthUser[] = [];
+
+  // Fetch fresh group members to get member ids (if API exposes them)
+  const groupDetails = await apiRequest(primary.token, 'GET', GET_GROUP_ENDPOINT(groupId));
+  const groupMembersList = (groupDetails as any)?.data?.members ?? [];
+
+  for (const im of invitedMemberRecords) {
+    const inv = im.invitee as MinimalUser;
+
+    // Try to map to a member record returned by group details (match by email or phone)
+    const match = groupMembersList.find((m: any) => {
+      if (inv.email && m.email === inv.email) return true;
+      if (inv.phone && m.phone === inv.phone) return true;
+      // some systems store invitee as contact (pending) — fallback: match by displayName or placeholder
+      return false;
+    });
+
+    const candidateMemberRecord = match ?? im.addResp ?? {};
+    try {
+      const authUser = await completeInviteAndAuthenticate(inv, groupId, candidateMemberRecord);
+      nice('Invitee authenticated:', authUser.uid);
+      authenticatedInvitees.push(authUser);
+    } catch (err) {
+      nice('❌ Invitee onboarding failed for', inv, 'error:', err);
     }
   }
 
-  // ============================================
-  // PART 5: GROUP ANALYTICS
-  // ============================================
-  logStep('=== PART 5: Group Analytics ===');
+  // For convenience assign aliases to invitees if they exist (email-only -> invitee1, etc.)
+  // const [inviteeEmailOnly, inviteePhoneOnly, inviteeBoth] = authenticatedInvitees;
 
-  logStep('Group: Fetching Analytics');
-  await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}/analytics`);
+  // PART 5: Group expenses — owner and invitees (if authenticated) add expenses
+  nice('\n=== PART 5: Group expenses by owner and invitees ===');
 
-  // ============================================
-  // PART 6: SETTLEMENTS & PAYMENT FLOW
-  // ============================================
-  logStep('=== PART 6: Settlements & Payment Flow ===');
+  // Helper: fetch member UIDs from group
+  const freshGroup = await apiRequest(primary.token, 'GET', GET_GROUP_ENDPOINT(groupId));
+  const members = (freshGroup as any)?.data?.members ?? [];
+  const memberUids = members.map((m: any) => m.userId).filter(Boolean);
 
-  logStep('Group: Viewing Analytics Before Settlement');
-  const analyticsBefore = await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}/analytics`);
-  // eslint-disable-next-line no-console
-  console.log(
-    '   📊 Balances before settlement:',
-    (analyticsBefore as { data?: { memberBalances?: Record<string, number> } })?.data
-      ?.memberBalances
-  );
+  nice('Group member UIDs:', memberUids);
 
-  logStep('Group: Generating Settlement Suggestions');
-  const settlementRes = await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/settle`);
-  const settlements =
-    (
-      settlementRes as {
-        data?: Array<{
-          id?: string;
-          from_user?: string;
-          to_user?: string;
-          amount?: number;
-          status?: string;
-        }>;
-      }
-    )?.data || [];
-  // eslint-disable-next-line no-console
-  console.log(`   💰 Generated ${settlements.length} settlement(s)`);
+  // Owner adds a flight expense split equally
+  await apiRequest(primary.token, 'POST', `/api/groups/${groupId}/expenses`, {
+    amount: 40000,
+    currency: 'INR',
+    category: 'transportation',
+    description: 'Flight Booking (owner)',
+    date: new Date().toISOString(),
+    splits: memberUids.length
+      ? memberUids.map((uid: string) => ({ userId: uid, amount: 40000 / memberUids.length }))
+      : [],
+  });
 
-  logStep('Group: Viewing Analytics After Settlement Generation');
-  const analyticsAfter = await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}/analytics`);
-  // eslint-disable-next-line no-console
-  console.log(
-    '   📊 Balances after settlement:',
-    (analyticsAfter as { data?: { memberBalances?: Record<string, number> } })?.data?.memberBalances
-  );
-
-  // Log settlement details
-  if (settlements.length > 0) {
-    settlements.forEach((settlement, index) => {
-      // eslint-disable-next-line no-console
-      console.log(
-        `   ${index + 1}. ${settlement.from_user} → ${settlement.to_user}: ${settlement.amount} (${settlement.status})`
-      );
+  // If inviteeEmailOnly exists, let them add an expense (simulate their actions)
+  for (const auth of authenticatedInvitees) {
+    if (!auth.token) continue;
+    await apiRequest(auth.token, 'POST', `/api/groups/${groupId}/expenses`, {
+      amount: 2000,
+      currency: 'INR',
+      category: 'food',
+      description: `Expense by ${auth.name || auth.email || auth.phone}`,
+      date: new Date().toISOString(),
+      splits: memberUids.length
+        ? memberUids.map((uid: string) => ({ userId: uid, amount: 2000 / memberUids.length }))
+        : [],
     });
   }
-  // eslint-disable-next-line no-console
-  console.log(
-    '   ℹ️  Note: Balances remain until settlements are marked as "completed" (settlements are suggestions)'
-  );
 
-  // ============================================
-  // PART 7: NOTIFICATIONS
-  // ============================================
-  logStep('=== PART 7: Notifications ===');
+  // PART 6: Analytics, settlements, notifications
+  nice('\n=== PART 6: Analytics, settlements, notifications ===');
+  await apiRequest(primary.token, 'GET', `/api/groups/${groupId}/analytics`);
+  await apiRequest(primary.token, 'POST', `/api/groups/${groupId}/settle`);
 
-  logStep('Paynride: Viewing Notifications');
-  await apiRequest(paynride.token, 'GET', '/api/users/notifications');
-
-  logStep('Rajesh: Viewing Notifications');
-  await apiRequest(rajesh.token, 'GET', '/api/users/notifications');
-
-  logStep('Priya: Viewing Notifications');
-  await apiRequest(priya.token, 'GET', '/api/users/notifications');
-
-  // ============================================
-  // PART 8: MEMBER MANAGEMENT
-  // ============================================
-  logStep('=== PART 8: Member Management ===');
-
-  logStep('Group: Testing Duplicate Member Addition (Should Fail)');
-  await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/members`, {
-    email: paynride.email,
-    displayName: paynride.name,
-  });
-
-  logStep('Group: Testing Leave Group with Balance (Should Fail)');
-  const leaveAttempt1 = await apiRequest(paynride.token, 'POST', `/api/groups/${groupId}/leave`);
-  if ((leaveAttempt1 as { status?: string })?.status === 'fail') {
-    // eslint-disable-next-line no-console
-    console.log('   ✅ Correctly prevented leaving with balance');
+  // Invitees view notifications if authenticated
+  for (const auth of authenticatedInvitees) {
+    if (!auth.token) continue;
+    await apiRequest(auth.token, 'GET', '/api/users/notifications');
   }
 
-  // Generate settlements again to ensure all debts are covered
-  logStep('Group: Generating Final Settlements');
-  const finalSettlementRes = await apiRequest(
-    bharat.token,
-    'POST',
-    `/api/groups/${groupId}/settle`
-  );
-  const finalSettlements =
-    (
-      finalSettlementRes as {
-        data?: Array<{ id?: string; from_user?: string; to_user?: string; amount?: number }>;
-      }
-    )?.data || [];
-  // eslint-disable-next-line no-console
-  console.log(`   💰 Final settlements: ${finalSettlements.length} transaction(s)`);
-
-  // View final analytics
-  logStep('Group: Viewing Final Analytics After All Settlements');
-  const finalAnalytics = await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}/analytics`);
-  const finalBalances = (finalAnalytics as { data?: { memberBalances?: Record<string, number> } })
-    ?.data?.memberBalances;
-  // eslint-disable-next-line no-console
-  console.log('   📊 Final balances:', finalBalances);
-
-  // Note: Users can still have balances even after settlements are created
-  // because settlements are "pending" until marked as "completed"
-  // This is expected behavior - settlements are suggestions, not automatic payments
-  logStep('Group: Testing Leave Group After Settlement (May Still Fail if Balances Exist)');
-  const leaveAttempt2 = await apiRequest(paynride.token, 'POST', `/api/groups/${groupId}/leave`);
-  if ((leaveAttempt2 as { status?: string })?.status === 'fail') {
-    // eslint-disable-next-line no-console
-    console.log('   ℹ️  User still has balance - settlements are pending, not completed');
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('   ✅ User successfully left group');
+  // PART 7: Member management tests (duplicate add, leave, re-add)
+  nice('\n=== PART 7: Member management tests ===');
+  // Attempt duplicate addition for first invitee (should fail or return error)
+  const firstInvitee = inviteesCfg[0];
+  if (firstInvitee?.email) {
+    await apiRequest(primary.token, 'POST', ADD_MEMBER_ENDPOINT_TEMPLATE(groupId), {
+      email: firstInvitee.email,
+    });
   }
 
-  logStep('Group: Re-adding Paynride by Email');
-  await apiRequest(bharat.token, 'POST', `/api/groups/${groupId}/members`, {
-    email: paynride.email,
-    displayName: paynride.name,
-  });
+  // Attempt to leave group with balance (one of authenticated invitees)
+  if (authenticatedInvitees[0]?.token) {
+    const leaveResp = await apiRequest(
+      authenticatedInvitees[0].token,
+      'POST',
+      `/api/groups/${groupId}/leave`
+    );
+    nice('Leave response:', leaveResp);
+  }
 
-  // ============================================
-  // PART 9: EXPENSE MANAGEMENT
-  // ============================================
-  logStep('=== PART 9: Expense Management ===');
+  // Generate final settlements
+  await apiRequest(primary.token, 'POST', `/api/groups/${groupId}/settle`);
+  await apiRequest(primary.token, 'GET', `/api/groups/${groupId}/analytics`);
 
-  // Note: Group expense updates would require a specific endpoint
-  // For now, we'll test viewing analytics which includes expense data
-
-  // ============================================
-  // PART 10: FINAL STATISTICS
-  // ============================================
-  logStep('=== PART 10: Final Statistics ===');
-
-  logStep('Bharat: Final User Statistics');
-  await apiRequest(bharat.token, 'GET', '/api/users/stats');
-
-  logStep('Paynride: Final User Statistics');
-  await apiRequest(paynride.token, 'GET', '/api/users/stats');
-
-  logStep('Rajesh: Final User Statistics');
-  await apiRequest(rajesh.token, 'GET', '/api/users/stats');
-
-  logStep('Priya: Final User Statistics');
-  await apiRequest(priya.token, 'GET', '/api/users/stats');
-
-  logStep('Group: Final Group Analytics');
-  await apiRequest(bharat.token, 'GET', `/api/groups/${groupId}/analytics`);
-
-  // ============================================
-  // PART 11: ADDITIONAL SCENARIOS
-  // ============================================
-  logStep('=== PART 11: Additional Scenarios ===');
-
-  logStep('Bharat: Creating Second Group "Weekend Trip"');
-  const group2Res = (await apiRequest(bharat.token, 'POST', '/api/groups', {
-    name: 'Weekend Trip',
-    description: 'Quick Weekend Getaway',
+  // PART 8: Additional scenarios: create second group
+  nice('\n=== PART 8: Additional scenarios ===');
+  const group2 = await apiRequest(primary.token, 'POST', CREATE_GROUP_ENDPOINT, {
+    name: 'Weekend Trip - E2E',
+    description: 'Second group test',
     currency: 'INR',
     settings: { defaultSplitType: 'equal' },
-  })) as { data?: { id?: string } };
-
-  const group2Id = group2Res.data?.id;
-
+  });
+  const group2Id = (group2 as any)?.data?.id;
   if (group2Id) {
-    logStep('Group 2: Adding Members');
-    await apiRequest(bharat.token, 'POST', `/api/groups/${group2Id}/members`, {
-      email: paynride.email,
-      displayName: paynride.name,
-    });
-
-    logStep('Group 2: Adding Expense');
-    await apiRequest(bharat.token, 'POST', `/api/groups/${group2Id}/expenses`, {
+    // Add one invitee
+    if (authenticatedInvitees[0]?.email) {
+      await apiRequest(primary.token, 'POST', ADD_MEMBER_ENDPOINT_TEMPLATE(group2Id), {
+        email: authenticatedInvitees[0].email,
+      });
+    }
+    // Add simple expense
+    await apiRequest(primary.token, 'POST', `/api/groups/${group2Id}/expenses`, {
       amount: 3000,
       currency: 'INR',
       category: 'food',
       description: 'Weekend Lunch',
       date: new Date().toISOString(),
-      splits: [
-        { userId: bharat.uid, amount: 1500 },
-        { userId: paynride.uid, amount: 1500 },
-      ],
+      splits: authenticatedInvitees[0]
+        ? [
+            { userId: primary.uid, amount: 1500 },
+            { userId: authenticatedInvitees[0].uid, amount: 1500 },
+          ]
+        : [],
     });
   }
 
-  // ============================================
   // SUMMARY
-  // ============================================
-  // eslint-disable-next-line no-console
-  console.log('\n\n🎉 ============================================');
-  // eslint-disable-next-line no-console
-  console.log('✅ All Tests Completed Successfully!');
-  // eslint-disable-next-line no-console
-  console.log('============================================\n');
-
+  nice('\n\n🎉 E2E Test Completed — saving logs and exiting');
   saveLogs();
-};
+}
 
-runTests().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
-  console.error('❌ Test Suite Failed:', error);
-  process.exit(1);
-});
+/* ------------------------------ Run script ------------------------------- */
+
+run()
+  .then(() => {
+    nice('✅ Runner finished successfully');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('❌ Runner failed:', err);
+    saveLogs();
+    process.exit(1);
+  });

@@ -236,9 +236,12 @@ export class UserService extends BaseService {
           // Try to find user by phone in Supabase Auth
           if (formattedPhone) {
             try {
-              const { data: users } = await supabase.auth.admin.listUsers();
+              const { data: users } = await supabase.auth.admin.listUsers({
+                perPage: 1000, // Increase limit to find user
+              });
               const existingAuthUser = users.users.find(
-                (u) => u.phone === formattedPhone || u.email === email
+                (u) =>
+                  (formattedPhone && u.phone === formattedPhone) || (email && u.email === email)
               );
 
               if (existingAuthUser) {

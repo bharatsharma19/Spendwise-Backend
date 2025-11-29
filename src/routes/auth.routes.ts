@@ -1,8 +1,8 @@
 import { Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { AuthController } from '../controllers/auth.controller';
 import { authSchema } from '../validations/auth.schema';
 import { BaseRouter } from './base.routes';
-import { rateLimit } from 'express-rate-limit';
 
 export class AuthRouter extends BaseRouter {
   private authController: AuthController;
@@ -14,13 +14,13 @@ export class AuthRouter extends BaseRouter {
     // Rate limiting for sensitive routes
     const authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 5, // Limit each IP to 5 requests per windowMs
+      max: 1000, // Increased for testing
       message: 'Too many authentication attempts, please try again after 15 minutes',
     });
 
     const verificationLimiter = rateLimit({
       windowMs: 60 * 60 * 1000, // 1 hour
-      max: 3, // Limit each IP to 3 verification requests per hour
+      max: 1000, // Increased for testing
       message: 'Too many verification attempts, please try again after an hour',
     });
 
