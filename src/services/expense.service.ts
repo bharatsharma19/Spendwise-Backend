@@ -214,9 +214,11 @@ export class ExpenseService extends BaseService {
     id: string,
     data: Partial<ExpenseData>
   ): Promise<ExpenseResponse> {
-    return db.runTransaction(async (transaction) => {
+    return db.runTransaction(async (transaction: FirebaseFirestore.Transaction) => {
       const expenseRef = db.collection('expenses').doc(id);
-      const expenseDoc = await transaction.get(expenseRef);
+      const expenseDoc = (await transaction.get(
+        expenseRef
+      )) as unknown as FirebaseFirestore.DocumentSnapshot;
 
       if (!expenseDoc.exists) {
         throw new NotFoundError('Expense not found');

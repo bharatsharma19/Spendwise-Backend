@@ -112,6 +112,7 @@ app.use(requestLogger);
 app.use('/api/auth', routes.authRoutes);
 app.use('/api/users', routes.userRoutes);
 app.use('/api/expenses', routes.expenseRoutes);
+app.use('/api/groups', routes.groupRoutes);
 app.use('/api/analytics', routes.analyticsRoutes);
 
 // Root endpoint

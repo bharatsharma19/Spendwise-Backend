@@ -17,16 +17,7 @@ class MockTimestamp {
   }
 }
 
-jest.mock('firebase-admin/firestore', () => ({
-  Timestamp: MockTimestamp,
-}));
-
-// Mock Firebase
-jest.mock('../config/firebase', () => ({
-  db: {
-    collection: jest.fn(),
-  },
-}));
+// Mocks removed to rely on internal test logic in config files
 
 // Global Jest setup
 beforeAll(() => {

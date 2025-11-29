@@ -55,9 +55,12 @@ const envSchema = Joi.object({
   JWT_EXPIRES_IN: Joi.string().default('7d'),
 }).unknown();
 
-const { error, value: envVars } = envSchema.validate(process.env);
+const { error, value: envVars } = envSchema.validate(process.env, {
+  allowUnknown: true,
+  abortEarly: false,
+});
 
-if (error) {
+if (error && process.env.NODE_ENV !== 'test') {
   throw new AppError(
     `Config validation error: ${error.message}`,
     HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -65,27 +68,54 @@ if (error) {
   );
 }
 
+// Provide default mock values for test environment if validation failed
+const safeEnvVars =
+  process.env.NODE_ENV === 'test' && error
+    ? {
+        ...process.env,
+        NODE_ENV: 'test',
+        PORT: 5000,
+        FRONTEND_URL: 'http://localhost:3000',
+        ALLOWED_ORIGINS: 'http://localhost:3000',
+        FIREBASE_PROJECT_ID: 'test-project',
+        FIREBASE_PRIVATE_KEY: 'test-key',
+        FIREBASE_CLIENT_EMAIL: 'test@example.com',
+        FIREBASE_API_KEY: 'test-api-key',
+        EMAIL_USER: '',
+        EMAIL_APP_PASSWORD: '',
+        TWILIO_ACCOUNT_SID: 'test-sid',
+        TWILIO_AUTH_TOKEN: 'test-token',
+        TWILIO_VERIFY_SERVICE_ID: '',
+        TWILIO_PHONE_NUMBER: '1234567890',
+        JWT_SECRET: 'test-secret-key-must-be-at-least-32-chars-long',
+        JWT_EXPIRES_IN: '1d',
+      }
+    : envVars;
+
 export const env: EnvConfig = {
-  NODE_ENV: envVars.NODE_ENV,
-  PORT: envVars.PORT,
-  FRONTEND_URL: envVars.FRONTEND_URL,
-  ALLOWED_ORIGINS: envVars.ALLOWED_ORIGINS.split(','),
+  NODE_ENV: safeEnvVars.NODE_ENV,
+  PORT: safeEnvVars.PORT,
+  FRONTEND_URL: safeEnvVars.FRONTEND_URL,
+  ALLOWED_ORIGINS:
+    typeof safeEnvVars.ALLOWED_ORIGINS === 'string'
+      ? safeEnvVars.ALLOWED_ORIGINS.split(',')
+      : safeEnvVars.ALLOWED_ORIGINS,
 
-  FIREBASE_PROJECT_ID: envVars.FIREBASE_PROJECT_ID,
-  FIREBASE_PRIVATE_KEY: envVars.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Handle escaped newlines
-  FIREBASE_CLIENT_EMAIL: envVars.FIREBASE_CLIENT_EMAIL,
-  FIREBASE_API_KEY: envVars.FIREBASE_API_KEY,
+  FIREBASE_PROJECT_ID: safeEnvVars.FIREBASE_PROJECT_ID,
+  FIREBASE_PRIVATE_KEY: safeEnvVars.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Handle escaped newlines
+  FIREBASE_CLIENT_EMAIL: safeEnvVars.FIREBASE_CLIENT_EMAIL,
+  FIREBASE_API_KEY: safeEnvVars.FIREBASE_API_KEY,
 
-  EMAIL_USER: envVars.EMAIL_USER,
-  EMAIL_APP_PASSWORD: envVars.EMAIL_APP_PASSWORD,
+  EMAIL_USER: safeEnvVars.EMAIL_USER,
+  EMAIL_APP_PASSWORD: safeEnvVars.EMAIL_APP_PASSWORD,
 
-  TWILIO_ACCOUNT_SID: envVars.TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN: envVars.TWILIO_AUTH_TOKEN,
-  TWILIO_VERIFY_SERVICE_ID: envVars.TWILIO_VERIFY_SERVICE_ID,
-  TWILIO_PHONE_NUMBER: envVars.TWILIO_PHONE_NUMBER,
+  TWILIO_ACCOUNT_SID: safeEnvVars.TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN: safeEnvVars.TWILIO_AUTH_TOKEN,
+  TWILIO_VERIFY_SERVICE_ID: safeEnvVars.TWILIO_VERIFY_SERVICE_ID,
+  TWILIO_PHONE_NUMBER: safeEnvVars.TWILIO_PHONE_NUMBER,
 
-  JWT_SECRET: envVars.JWT_SECRET,
-  JWT_EXPIRES_IN: envVars.JWT_EXPIRES_IN,
+  JWT_SECRET: safeEnvVars.JWT_SECRET,
+  JWT_EXPIRES_IN: safeEnvVars.JWT_EXPIRES_IN,
 };
 
 export default env;

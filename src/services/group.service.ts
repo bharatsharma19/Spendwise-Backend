@@ -249,14 +249,16 @@ export class GroupService extends BaseService {
     expenseId: string,
     userId: string
   ): Promise<GroupExpense> {
-    return db.runTransaction(async (transaction) => {
+    return db.runTransaction(async (transaction: FirebaseFirestore.Transaction) => {
       const expenseRef = db
         .collection(this.collection)
         .doc(groupId)
         .collection('expenses')
         .doc(expenseId);
 
-      const expenseDoc = await transaction.get(expenseRef);
+      const expenseDoc = (await transaction.get(
+        expenseRef
+      )) as unknown as FirebaseFirestore.DocumentSnapshot;
       if (!expenseDoc.exists) {
         throw new NotFoundError('Expense not found');
       }
@@ -301,7 +303,7 @@ export class GroupService extends BaseService {
   public async settleGroup(groupId: string, userId: string): Promise<GroupSettlement> {
     await this.validateMemberAccess(groupId, userId);
 
-    return db.runTransaction(async (transaction) => {
+    return db.runTransaction(async (transaction: FirebaseFirestore.Transaction) => {
       const groupRef = db.collection(this.collection).doc(groupId);
       const expensesRef = groupRef.collection('expenses');
 
@@ -311,12 +313,12 @@ export class GroupService extends BaseService {
 
       // Calculate balances
       const balances = new Map<string, number>();
-      expenses.forEach((expense) => {
+      expenses.forEach((expense: GroupExpense) => {
         // Add expense amount to payer's balance
         balances.set(expense.paidBy, (balances.get(expense.paidBy) || 0) + expense.amount);
 
         // Subtract split amount from each member's balance
-        expense.splits.forEach((split) => {
+        expense.splits.forEach((split: ExpenseSplit) => {
           balances.set(split.userId, (balances.get(split.userId) || 0) - split.amount);
         });
       });
