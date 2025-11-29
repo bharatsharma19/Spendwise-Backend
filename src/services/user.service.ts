@@ -1,10 +1,14 @@
-import { auth } from '../config/firebase';
-import { User, CreateUserDto, UpdateUserDto, UserResponse } from '../models/user.model';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
 import { Timestamp, WhereFilterOp } from 'firebase-admin/firestore';
+import { auth, db } from '../config/firebase';
+import { CreateUserDto, UpdateUserDto, User, UserResponse } from '../models/user.model';
+import {
+  AppError,
+  AuthorizationError,
+  ErrorType,
+  HttpStatusCode,
+  NotFoundError,
+} from '../utils/error';
 import { BaseService } from './base.service';
-import { db } from '../config/firebase';
-import { NotFoundError, AuthorizationError } from '../utils/error';
 
 interface UserProfile {
   displayName?: string;
@@ -360,7 +364,7 @@ export class UserService extends BaseService {
     const notificationsRef = db.collection('notifications').where('userId', '==', userId);
     const snapshot = await notificationsRef.orderBy('createdAt', 'desc').get();
 
-    return snapshot.docs.map((doc) => ({
+    return snapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data(),
     }));
@@ -416,12 +420,12 @@ export class UserService extends BaseService {
       db.collection('users').doc(userId).collection('friends').get(),
     ]);
 
-    const expenses = expensesSnapshot.docs.map((doc) => doc.data());
+    const expenses = expensesSnapshot.docs.map((doc: any) => doc.data());
     const totalExpenses = expenses.length;
-    const monthlySpending = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const monthlySpending = expenses.reduce((sum: any, expense: any) => sum + expense.amount, 0);
 
     const categoryBreakdown = expenses.reduce(
-      (acc, expense) => {
+      (acc: any, expense: any) => {
         acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
         return acc;
       },
