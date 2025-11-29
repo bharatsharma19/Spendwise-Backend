@@ -23,8 +23,8 @@ const server = app.listen(env.PORT, async () => {
     } else {
       logger.info('Supabase Connected Successfully');
     }
-  } catch (err: any) {
-    logger.error('Supabase connection error:', err.message);
+  } catch (err: unknown) {
+    logger.error('Supabase connection error:', err instanceof Error ? err.message : String(err));
   }
 });
 
@@ -40,7 +40,7 @@ server.on('connection', (connection) => {
  * Gracefully shut down the server
  * @param signal Signal received (e.g., SIGTERM, SIGINT)
  */
-const gracefulShutdown = async (signal: string) => {
+const gracefulShutdown = async (signal: string): Promise<void> => {
   logger.info(`${signal} received. Shutting down gracefully...`);
 
   // Close server to stop accepting new connections

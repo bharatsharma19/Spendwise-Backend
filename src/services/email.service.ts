@@ -45,13 +45,13 @@ export class EmailService {
       };
 
       await this.transporter.sendMail(mailOptions);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error sending verification email:', error);
-      throw new AppError(
-        error.message || 'Failed to send verification email',
-        error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to send verification email';
+      const errorStatus =
+        (error as { status?: number })?.status || HttpStatusCode.INTERNAL_SERVER_ERROR;
+      throw new AppError(errorMessage, errorStatus, ErrorType.DATABASE);
     }
   }
 
@@ -71,13 +71,13 @@ export class EmailService {
       };
 
       await this.transporter.sendMail(mailOptions);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error sending password reset email:', error);
-      throw new AppError(
-        error.message || 'Failed to send password reset email',
-        error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to send password reset email';
+      const errorStatus =
+        (error as { status?: number })?.status || HttpStatusCode.INTERNAL_SERVER_ERROR;
+      throw new AppError(errorMessage, errorStatus, ErrorType.DATABASE);
     }
   }
 }

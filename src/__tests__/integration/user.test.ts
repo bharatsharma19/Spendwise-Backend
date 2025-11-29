@@ -1,14 +1,11 @@
 import request from 'supertest';
 import app from '../../app';
 import { supabase } from '../../config/supabase';
-import { mockUser } from '../utils/mockAuth';
+import { mockAuthenticate, mockUser } from '../utils/mockAuth';
 
-jest.mock('../../middleware/auth', () => {
-  const { mockAuthenticate } = require('../utils/mockAuth');
-  return {
-    authenticate: mockAuthenticate,
-  };
-});
+jest.mock('../../middleware/auth', () => ({
+  authenticate: mockAuthenticate,
+}));
 
 describe('User Routes', () => {
   describe('GET /api/users/profile', () => {

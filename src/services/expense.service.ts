@@ -104,26 +104,28 @@ export class ExpenseService extends BaseService {
 
   // ... (keep other methods)
 
-  private transformExpenseResponse(data: any): ExpenseResponse {
+  private transformExpenseResponse(data: Record<string, unknown>): ExpenseResponse {
     return {
-      id: data.id,
-      userId: data.user_id,
-      amount: data.amount,
-      category: data.category,
-      description: data.description,
-      date: new Date(data.date),
-      currency: data.currency,
-      isRecurring: data.is_recurring,
+      id: data.id as string,
+      userId: data.user_id as string,
+      amount: data.amount as number,
+      category: data.category as ExpenseCategory,
+      description: data.description as string,
+      date: new Date(data.date as string | number | Date),
+      currency: data.currency as string,
+      isRecurring: data.is_recurring as boolean,
       recurringDetails: data.is_recurring
         ? {
             frequency: data.recurring_frequency as 'daily' | 'weekly' | 'monthly' | 'yearly',
-            nextDueDate: data.next_due_date ? new Date(data.next_due_date) : new Date(),
+            nextDueDate: data.next_due_date
+              ? new Date(data.next_due_date as string | number | Date)
+              : new Date(),
           }
         : undefined,
-      isSplit: data.is_split,
-      splitDetails: data.split_details,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
+      isSplit: data.is_split as boolean,
+      splitDetails: data.split_details as ExpenseResponse['splitDetails'],
+      createdAt: new Date(data.created_at as string | number | Date),
+      updatedAt: new Date(data.updated_at as string | number | Date),
     };
   }
 
@@ -232,7 +234,7 @@ export class ExpenseService extends BaseService {
         throw new AuthorizationError('Unauthorized access');
       }
 
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
 

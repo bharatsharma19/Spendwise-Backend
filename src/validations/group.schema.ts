@@ -25,9 +25,16 @@ export const groupSchema = {
   }),
 
   addMember: Joi.object({
-    email: Joi.string().email().required().trim().lowercase(),
+    email: Joi.string().email().trim().lowercase(),
+    phoneNumber: Joi.string().pattern(VALIDATION_CONSTANTS.PHONE_REGEX).messages({
+      'string.pattern.base': 'Phone number must be in E.164 format (e.g., +1234567890)',
+    }),
     displayName: Joi.string().optional(),
-  }),
+  })
+    .or('email', 'phoneNumber')
+    .messages({
+      'object.missing': 'Either email or phoneNumber is required',
+    }),
 
   addGroupExpense: Joi.object({
     amount: Joi.number().positive().required().precision(2),

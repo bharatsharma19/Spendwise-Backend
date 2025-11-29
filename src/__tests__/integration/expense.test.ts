@@ -1,14 +1,12 @@
 import request from 'supertest';
 import app from '../../app';
 import { supabase } from '../../config/supabase';
+import { mockAuthenticate } from '../utils/mockAuth';
 
 // Mock the authentication middleware for these protected routes
-jest.mock('../../middleware/auth', () => {
-  const { mockAuthenticate } = require('../utils/mockAuth');
-  return {
-    authenticate: mockAuthenticate,
-  };
-});
+jest.mock('../../middleware/auth', () => ({
+  authenticate: mockAuthenticate,
+}));
 
 describe('Expense Routes', () => {
   describe('POST /api/expenses', () => {
@@ -80,7 +78,12 @@ describe('Expense Routes', () => {
           lte: jest.fn().mockReturnThis(),
           order: jest.fn().mockReturnThis(),
           limit: jest.fn().mockReturnThis(),
-          then: (resolve: any) => resolve({ data: mockData, error: null }),
+          then: (
+            resolve: (value: { data: unknown[]; error: null }) => void
+          ): Promise<{ data: unknown[]; error: null }> => {
+            resolve({ data: mockData, error: null });
+            return Promise.resolve({ data: mockData, error: null });
+          },
         };
       });
 

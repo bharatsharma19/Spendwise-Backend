@@ -1,8 +1,9 @@
-import { Response, NextFunction } from 'express';
-import { NotificationService } from '../services/notification.service';
-import { ValidationError, AppError, HttpStatusCode, ErrorType } from '../utils/error';
+import { NextFunction, Response } from 'express';
+import Joi from 'joi';
 import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
+import { NotificationService } from '../services/notification.service';
+import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
 
 const notificationService = NotificationService.getInstance();
 
@@ -22,7 +23,9 @@ export class NotificationController {
     return NotificationController.instance;
   }
 
-  private handleValidationError(error: any): never {
+  private handleValidationError(
+    error: Joi.ValidationError | { details?: Array<{ message: string }> }
+  ): never {
     if (error.details && Array.isArray(error.details) && error.details.length > 0) {
       throw new ValidationError(error.details[0].message, []);
     }
@@ -39,7 +42,7 @@ export class NotificationController {
     }
   }
 
-  async getUserNotifications(req: AuthRequest, res: Response, next: NextFunction) {
+  async getUserNotifications(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -55,7 +58,7 @@ export class NotificationController {
     }
   }
 
-  async markNotificationAsRead(req: AuthRequest, res: Response, next: NextFunction) {
+  async markNotificationAsRead(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -76,7 +79,11 @@ export class NotificationController {
     }
   }
 
-  async markAllNotificationsAsRead(req: AuthRequest, res: Response, next: NextFunction) {
+  async markAllNotificationsAsRead(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -92,7 +99,7 @@ export class NotificationController {
     }
   }
 
-  async deleteNotification(req: AuthRequest, res: Response, next: NextFunction) {
+  async deleteNotification(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;

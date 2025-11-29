@@ -1,6 +1,6 @@
 import twilio from 'twilio';
 import { env } from '../config/env.config';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
+import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 
 export class TwilioService {
   private static instance: TwilioService;
@@ -48,13 +48,12 @@ export class TwilioService {
       });
 
       return result.status === 'queued' || result.status === 'sent';
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error sending OTP:', error);
-      throw new AppError(
-        error.message || 'Failed to send OTP',
-        error.status || HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.DATABASE
-      );
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
+      const errorStatus =
+        (error as { status?: number })?.status || HttpStatusCode.INTERNAL_SERVER_ERROR;
+      throw new AppError(errorMessage, errorStatus, ErrorType.DATABASE);
     }
   }
 

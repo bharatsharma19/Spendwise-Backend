@@ -1,4 +1,5 @@
 import { NextFunction, Response } from 'express';
+import Joi from 'joi';
 import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
 import { UserService } from '../services/user.service';
@@ -23,7 +24,9 @@ export class UserController {
     return UserController.instance;
   }
 
-  private handleValidationError(error: any): never {
+  private handleValidationError(
+    error: Joi.ValidationError | { details?: Array<{ message: string }> }
+  ): never {
     if (error.details && Array.isArray(error.details) && error.details.length > 0) {
       throw new ValidationError(error.details[0].message, []);
     }
@@ -40,7 +43,7 @@ export class UserController {
     }
   }
 
-  getProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -56,7 +59,7 @@ export class UserController {
     }
   };
 
-  updateProfile = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  updateProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -77,7 +80,11 @@ export class UserController {
     }
   };
 
-  updatePreferences = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  updatePreferences = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -98,7 +105,7 @@ export class UserController {
     }
   };
 
-  updateSettings = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  updateSettings = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -119,7 +126,7 @@ export class UserController {
     }
   };
 
-  getNotifications = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getNotifications = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -135,7 +142,11 @@ export class UserController {
     }
   };
 
-  markNotificationAsRead = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  markNotificationAsRead = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -156,7 +167,11 @@ export class UserController {
     }
   };
 
-  deleteNotification = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  deleteNotification = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -177,7 +192,7 @@ export class UserController {
     }
   };
 
-  getUserStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getUserStats = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;

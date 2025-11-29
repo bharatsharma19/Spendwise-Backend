@@ -1,3 +1,4 @@
+import { env } from '../config/env.config';
 import { supabase } from '../config/supabase';
 import { Notification } from '../models/notification.model';
 import {
@@ -9,6 +10,8 @@ import {
 } from '../models/user.model';
 import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 import { BaseService } from './base.service';
+import { EmailService } from './email.service';
+import { TwilioService } from './twilio.service';
 
 interface UserProfile {
   displayName?: string;
@@ -44,9 +47,13 @@ interface UserStats {
 
 export class UserService extends BaseService {
   private static instance: UserService;
+  private readonly emailService: EmailService;
+  private readonly twilioService: TwilioService;
 
   private constructor() {
     super('profiles');
+    this.emailService = EmailService.getInstance();
+    this.twilioService = TwilioService.getInstance();
   }
 
   public static getInstance(): UserService {
@@ -130,6 +137,183 @@ export class UserService extends BaseService {
     }
   }
 
+  async getUserByPhone(phoneNumber: string): Promise<UserResponse> {
+    try {
+      const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('phone_number', formattedPhone)
+        .single();
+
+      if (error || !data) {
+        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
+      }
+      return this.transformUserResponse(data as User);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to get user',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  /**
+   * Find user by email or phone, or create if not exists
+   * If user is created, sends verification email/SMS
+   */
+  async findOrCreateUser(
+    email?: string,
+    phoneNumber?: string,
+    displayName?: string
+  ): Promise<{ user: UserResponse; isNewUser: boolean }> {
+    try {
+      let user: UserResponse | null = null;
+
+      // Try to find existing user
+      if (email) {
+        try {
+          user = await this.getUserByEmail(email);
+        } catch (error) {
+          // User not found, will create
+        }
+      }
+
+      if (!user && phoneNumber) {
+        try {
+          user = await this.getUserByPhone(phoneNumber);
+        } catch (error) {
+          // User not found, will create
+        }
+      }
+
+      // If user exists, return it
+      if (user) {
+        return { user, isNewUser: false };
+      }
+
+      // User doesn't exist, create new user
+      if (!email && !phoneNumber) {
+        throw new AppError(
+          'Either email or phoneNumber is required',
+          HttpStatusCode.BAD_REQUEST,
+          ErrorType.VALIDATION
+        );
+      }
+
+      // Generate a temporary password (user will need to reset it)
+      const tempPassword =
+        Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
+
+      const formattedPhone = phoneNumber
+        ? phoneNumber.startsWith('+')
+          ? phoneNumber
+          : `+${phoneNumber}`
+        : undefined;
+
+      // Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: email || undefined,
+        phone: formattedPhone || undefined,
+        password: tempPassword,
+        email_confirm: false, // User needs to verify
+        phone_confirm: false, // User needs to verify
+        user_metadata: {
+          display_name: displayName || 'New User',
+          phone_number: formattedPhone,
+        },
+      });
+
+      if (authError || !authData.user) {
+        throw new AppError(
+          authError?.message || 'Failed to create user',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
+      }
+
+      // Create user profile
+      const userData = {
+        id: authData.user.id,
+        email: email || authData.user.email || '',
+        phone_number: formattedPhone || authData.user.phone || '',
+        display_name: displayName || 'New User',
+        photo_url: '',
+        preferences: {
+          currency: 'INR',
+          language: 'en',
+          notifications: {
+            email: true,
+            push: true,
+            sms: true,
+          },
+          theme: 'system',
+          budgetAlerts: true,
+          monthlyBudget: 0,
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_email_verified: false,
+        is_phone_verified: false,
+        status: 'active',
+      };
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .insert(userData)
+        .select()
+        .single();
+
+      if (profileError) {
+        // If profile creation fails, try to clean up auth user
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        throw new AppError(
+          'Failed to create user profile',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
+      }
+
+      if (!profileData) {
+        throw new AppError(
+          'Failed to create user profile',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
+      }
+
+      user = this.transformUserResponse(profileData);
+
+      // Send verification email/SMS
+      try {
+        if (email) {
+          // Generate password reset link (user will set password when they verify)
+          const resetLink = `${env.FRONTEND_URL}/verify-email?token=${authData.user.id}`;
+          await this.emailService.sendVerificationEmail(email, resetLink);
+        }
+
+        if (formattedPhone) {
+          // Send OTP via SMS
+          await this.twilioService.sendOTP(formattedPhone);
+        }
+      } catch (notificationError) {
+        // Log error but don't fail user creation
+        console.error('Failed to send verification notification:', notificationError);
+      }
+
+      return { user, isNewUser: true };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to find or create user',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
   async generateAuthToken(_uid: string): Promise<string> {
     // Supabase handles tokens. This might be needed for custom flows but usually client handles it.
     // If we need to mint a token server-side, we need supabase-admin.
@@ -177,7 +361,7 @@ export class UserService extends BaseService {
 
   async updateUser(uid: string, updateData: UpdateUserDto): Promise<UserResponse> {
     try {
-      const updateFields: any = {
+      const updateFields: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
 
@@ -247,12 +431,40 @@ export class UserService extends BaseService {
     }
   }
 
-  private transformUserResponse(user: User): UserResponse {
+  private transformUserResponse(
+    user: User | { id?: string; [key: string]: unknown }
+  ): UserResponse {
+    // Map database 'id' to 'uid' if needed
+    const dbUser = user as { id?: string; uid?: string; [key: string]: unknown };
+    const uid = dbUser.uid || dbUser.id || '';
+
+    // Map database field names to User interface
+    const mappedUser: User = {
+      uid,
+      email: (dbUser.email as string) || '',
+      phoneNumber: (dbUser.phone_number as string) || (dbUser.phoneNumber as string) || '',
+      displayName: (dbUser.display_name as string) || (dbUser.displayName as string),
+      photoURL: (dbUser.photo_url as string) || (dbUser.photoURL as string),
+      preferences: (dbUser.preferences as UserPreferences) || {
+        currency: 'INR',
+        language: 'en',
+        notifications: { email: true, push: true, sms: true },
+        theme: 'system',
+        budgetAlerts: true,
+      },
+      created_at: (dbUser.created_at as string) || new Date().toISOString(),
+      updated_at: (dbUser.updated_at as string) || new Date().toISOString(),
+      last_login_at: (dbUser.last_login_at as string) || undefined,
+      isEmailVerified: (dbUser.is_email_verified as boolean) || false,
+      isPhoneVerified: (dbUser.is_phone_verified as boolean) || false,
+      status: (dbUser.status as 'active' | 'inactive' | 'suspended') || 'active',
+    };
+
     return {
-      ...user,
-      createdAt: new Date(user.created_at),
-      updatedAt: new Date(user.updated_at),
-      lastLoginAt: user.last_login_at ? new Date(user.last_login_at) : undefined,
+      ...mappedUser,
+      createdAt: new Date(mappedUser.created_at),
+      updatedAt: new Date(mappedUser.updated_at),
+      lastLoginAt: mappedUser.last_login_at ? new Date(mappedUser.last_login_at) : undefined,
     };
   }
 
@@ -261,7 +473,7 @@ export class UserService extends BaseService {
   }
 
   async updateProfile(userId: string, data: UserProfile): Promise<UserResponse> {
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (data.displayName) updateData.display_name = data.displayName;
     if (data.photoURL) updateData.photo_url = data.photoURL;
     if (data.phoneNumber) updateData.phone_number = data.phoneNumber;
@@ -371,12 +583,12 @@ export class UserService extends BaseService {
       const expenses = expensesResult.data || [];
       const totalExpenses = expenses.length;
       const monthlySpending = expenses.reduce(
-        (sum: number, expense: any) => sum + expense.amount,
+        (sum: number, expense: { amount: number }) => sum + expense.amount,
         0
       );
 
       const categoryBreakdown = expenses.reduce(
-        (acc: any, expense: any) => {
+        (acc: Record<string, number>, expense: { category: string; amount: number }) => {
           acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
           return acc;
         },

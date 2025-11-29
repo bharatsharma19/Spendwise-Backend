@@ -1,14 +1,14 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env.config';
-import { logger } from '../utils/logger';
 import { AppError } from '../utils/error';
+import { logger } from '../utils/logger';
 
 export const errorHandler = (
   err: Error | AppError,
   req: Request,
   res: Response,
   _next: NextFunction
-) => {
+): void => {
   // Log error
   logger.error('Error:', {
     message: err.message,
@@ -21,7 +21,7 @@ export const errorHandler = (
   });
 
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+    res.status(err.statusCode).json({
       status: err.status,
       type: err.type,
       message: err.message,
@@ -30,10 +30,11 @@ export const errorHandler = (
         isOperational: err.isOperational,
       }),
     });
+    return;
   }
 
   // Send generic error response
-  return res.status(500).json({
+  res.status(500).json({
     status: 'error',
     type: 'InternalServerError',
     message: env.NODE_ENV === 'production' ? 'Internal server error' : err.message,

@@ -1,9 +1,9 @@
-import { Router, RequestHandler, Response, NextFunction } from 'express';
+import { NextFunction, RequestHandler, Response, Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { AuthRequest } from '../middleware/auth';
+import Joi from 'joi';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { logger } from '../utils/logger';
-import { authenticate } from '../middleware/auth';
 
 export abstract class BaseRouter {
   protected router: Router;
@@ -35,8 +35,8 @@ export abstract class BaseRouter {
     method: 'get' | 'post' | 'put' | 'delete' | 'patch',
     path: string,
     handler: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>,
-    schema?: any
-  ) {
+    schema?: Joi.ObjectSchema
+  ): void {
     const middlewares: RequestHandler[] = [this.limiter, authenticate];
 
     if (schema) {
@@ -51,8 +51,8 @@ export abstract class BaseRouter {
     method: 'get' | 'post' | 'put' | 'delete' | 'patch',
     path: string,
     handler: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>,
-    schema?: any
-  ) {
+    schema?: Joi.ObjectSchema
+  ): void {
     const middlewares: RequestHandler[] = [this.limiter];
 
     if (schema) {

@@ -1,4 +1,5 @@
 import { NextFunction, Response } from 'express';
+import Joi from 'joi';
 import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
 import { GroupService } from '../services/group.service';
@@ -27,7 +28,9 @@ export class GroupController {
     return GroupController.instance;
   }
 
-  private handleValidationError(error: any): never {
+  private handleValidationError(
+    error: Joi.ValidationError | { details?: Array<{ message: string }> }
+  ): never {
     if (error.details && Array.isArray(error.details) && error.details.length > 0) {
       throw new ValidationError(error.details[0].message, []);
     }
@@ -44,7 +47,11 @@ export class GroupController {
     }
   }
 
-  public createGroup = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public createGroup = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -76,70 +83,56 @@ export class GroupController {
     }
   };
 
-  public addGroupMember = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public addGroupMember = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
-      const userId = req.user!.uid;
 
       const { groupId } = req.params;
       if (!groupId) {
         this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
       }
 
-      // Check if it's an invite by email
-      if (req.body.email) {
-        const { error, value } = groupSchema.addMember.validate(req.body);
-        if (error) this.handleValidationError(error);
+      // Validate request body - should have email or phoneNumber
+      const { error, value } = groupSchema.addMember.validate(req.body);
+      if (error) this.handleValidationError(error);
 
-        // Find user by email
-        const userToAdd = await this.userService.getUserByEmail(value.email);
-
-        const memberData = {
-          user_id: userToAdd.uid,
-          display_name: value.displayName || userToAdd.displayName || 'Member',
-          email: userToAdd.email,
-          role: 'member' as const,
-        };
-
-        const member = await this.groupService.addGroupMember(groupId, memberData);
-        res.status(201).json({
-          status: 'success',
-          data: member,
-        });
-        return;
-      }
-
-      // Fallback to existing logic (joining by code or self-add if we supported that, but schema enforces code)
-      // Actually, the previous logic was using joinGroup schema which requires 'code'.
-      // But the method implementation was just taking userId and adding them.
-      // If the user is joining via code, they are adding THEMSELVES.
-
-      const { error, value } = groupSchema.joinGroup.validate(req.body);
-      if (error) {
-        this.handleValidationError(error);
-      }
-
-      // If joining by code, we verify the code (logic should be in service, but here we just add current user)
-      // TODO: Verify code in service if needed. For now, assuming code validation happens or is just a gatekeeper.
+      // Find or create user by email or phone
+      const { user: userToAdd, isNewUser } = await this.userService.findOrCreateUser(
+        value.email,
+        value.phoneNumber,
+        value.displayName
+      );
 
       const memberData = {
-        user_id: userId,
-        display_name: value.displayName, // Schema doesn't have displayName for joinGroup?
-        email: req.user!.email, // We have email from auth
+        user_id: userToAdd.uid,
+        display_name: value.displayName || userToAdd.displayName || 'Member',
+        email: userToAdd.email,
         role: 'member' as const,
       };
 
       const member = await this.groupService.addGroupMember(groupId, memberData);
+
       res.status(201).json({
         status: 'success',
-        data: member,
+        data: {
+          ...member,
+          isNewUser, // Indicate if user was just created
+        },
       });
     } catch (error) {
       next(error);
     }
   };
 
-  public leaveGroup = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public leaveGroup = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -149,7 +142,8 @@ export class GroupController {
         this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
       }
 
-      await this.groupService.removeGroupMember(groupId, userId);
+      // User is leaving themselves
+      await this.groupService.removeGroupMember(groupId, userId, userId);
 
       res.status(200).json({
         status: 'success',
@@ -160,7 +154,39 @@ export class GroupController {
     }
   };
 
-  public addGroupExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public removeGroupMember = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const requesterId = req.user!.uid;
+      const { groupId, memberId } = req.params;
+
+      if (!groupId || !memberId) {
+        this.handleValidationError({
+          details: [{ message: 'Group ID and Member ID are required' }],
+        });
+      }
+
+      // Admin removing a member
+      await this.groupService.removeGroupMember(groupId, memberId, requesterId);
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Member removed successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public addGroupExpense = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -197,7 +223,11 @@ export class GroupController {
     }
   };
 
-  public markExpenseAsPaid = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public markExpenseAsPaid = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const userId = req.user!.uid;
@@ -219,7 +249,11 @@ export class GroupController {
     }
   };
 
-  public settleGroup = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public settleGroup = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -238,7 +272,11 @@ export class GroupController {
     }
   };
 
-  public getGroupAnalytics = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public getGroupAnalytics = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
 

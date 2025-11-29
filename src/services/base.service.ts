@@ -26,7 +26,7 @@ export abstract class BaseService {
     return data as T;
   }
 
-  protected async createDocument<T>(data: any): Promise<T> {
+  protected async createDocument<T>(data: Record<string, unknown>): Promise<T> {
     const { data: created, error } = await supabase
       .from(this.table)
       .insert({
@@ -48,7 +48,7 @@ export abstract class BaseService {
     return created as T;
   }
 
-  protected async updateDocument<T>(id: string, data: any): Promise<T> {
+  protected async updateDocument<T>(id: string, data: Record<string, unknown>): Promise<T> {
     const { data: updated, error } = await supabase
       .from(this.table)
       .update({
@@ -82,7 +82,7 @@ export abstract class BaseService {
   }
 
   protected async getCollection<T>(
-    filters: { field: string; operator: string; value: any }[] = [],
+    filters: { field: string; operator: string; value: unknown }[] = [],
     options?: QueryOptions
   ): Promise<T[]> {
     let query = supabase.from(this.table).select('*');
@@ -105,7 +105,7 @@ export abstract class BaseService {
           query = query.lt(field, value);
           break;
         case 'in':
-          query = query.in(field, value);
+          query = query.in(field, value as readonly unknown[]);
           break;
         case 'array-contains':
           query = query.contains(field, [value]);

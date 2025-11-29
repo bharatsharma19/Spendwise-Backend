@@ -188,39 +188,61 @@ export class GroupService extends BaseService {
     }
   }
 
-  public async removeGroupMember(groupId: string, userId: string): Promise<void> {
+  public async removeGroupMember(
+    groupId: string,
+    memberIdToRemove: string,
+    requesterId: string
+  ): Promise<void> {
     try {
-      // 1. Check if user is a member
-      const { data: member, error: memberError } = await supabase
+      // 1. Get group to check creator
+      const group = await this.getDocument<Group>(groupId);
+      if (!group) {
+        throw new NotFoundError('Group not found');
+      }
+
+      // 2. Check if member to remove exists
+      const { data: memberToRemove, error: memberError } = await supabase
         .from('group_members')
-        .select('id')
+        .select('id, role')
         .eq('group_id', groupId)
-        .eq('user_id', userId)
+        .eq('user_id', memberIdToRemove)
         .single();
 
-      if (memberError || !member) {
+      if (memberError || !memberToRemove) {
         throw new NotFoundError('Member not found in this group');
       }
 
-      // 2. Check for outstanding balance
-      const analytics = await this.getGroupAnalytics(groupId, userId);
-      const balance = analytics.memberBalances[userId] || 0;
+      // 3. Check permissions: Only admin (group creator) can remove members OR member can leave themselves
+      const isRequesterAdmin = group.created_by === requesterId;
+      const isRequesterRemovingSelf = requesterId === memberIdToRemove;
 
-      // Allow small floating point differences
-      if (Math.abs(balance) > 0.01) {
-        throw new AppError(
-          `Cannot leave group. You have a non-zero balance of ${balance.toFixed(2)}`,
-          HttpStatusCode.CONFLICT,
-          ErrorType.CONFLICT
+      if (!isRequesterAdmin && !isRequesterRemovingSelf) {
+        throw new AuthorizationError(
+          'Only group admin can remove members, or members can leave themselves'
         );
       }
 
-      // 3. Remove member
+      // 4. Check for outstanding balance (only if member is leaving themselves)
+      if (isRequesterRemovingSelf) {
+        const analytics = await this.getGroupAnalytics(groupId, memberIdToRemove);
+        const balance = analytics.memberBalances[memberIdToRemove] || 0;
+
+        // Allow small floating point differences
+        if (Math.abs(balance) > 0.01) {
+          throw new AppError(
+            `Cannot leave group. You have a non-zero balance of ${balance.toFixed(2)}`,
+            HttpStatusCode.CONFLICT,
+            ErrorType.CONFLICT
+          );
+        }
+      }
+
+      // 5. Remove member
       const { error: deleteError } = await supabase
         .from('group_members')
         .delete()
         .eq('group_id', groupId)
-        .eq('user_id', userId);
+        .eq('user_id', memberIdToRemove);
 
       if (deleteError) throw deleteError;
     } catch (error) {
@@ -250,7 +272,7 @@ export class GroupService extends BaseService {
 
       if (membersError || !members) throw new Error('Failed to fetch members');
 
-      const splits: ExpenseSplit[] = members.map((member: any) => ({
+      const splits: ExpenseSplit[] = members.map((member: { user_id: string }) => ({
         user_id: member.user_id,
         amount: data.amount / members.length,
         status: 'pending' as const,
@@ -272,8 +294,8 @@ export class GroupService extends BaseService {
 
       // Notify members
       const notifications = members
-        .filter((member: any) => member.user_id !== data.paid_by)
-        .map((member: any) =>
+        .filter((member: { user_id: string }) => member.user_id !== data.paid_by)
+        .map((member: { user_id: string }) =>
           this.notificationService.createExpenseAddedNotification(
             member.user_id,
             groupId,
@@ -403,16 +425,18 @@ export class GroupService extends BaseService {
       );
 
       const memberBalances: Record<string, number> = {};
-      safeExpenses.forEach((expense: any) => {
-        memberBalances[expense.paid_by] = (memberBalances[expense.paid_by] || 0) + expense.amount;
-        const splits = Array.isArray(expense.splits) ? (expense.splits as ExpenseSplit[]) : [];
-        splits.forEach((split) => {
-          memberBalances[split.user_id] = (memberBalances[split.user_id] || 0) - split.amount;
-        });
-      });
+      safeExpenses.forEach(
+        (expense: { paid_by: string; amount: number; splits?: ExpenseSplit[] }) => {
+          memberBalances[expense.paid_by] = (memberBalances[expense.paid_by] || 0) + expense.amount;
+          const splits = Array.isArray(expense.splits) ? (expense.splits as ExpenseSplit[]) : [];
+          splits.forEach((split) => {
+            memberBalances[split.user_id] = (memberBalances[split.user_id] || 0) - split.amount;
+          });
+        }
+      );
 
       const expenseByCategory: Record<string, number> = {};
-      safeExpenses.forEach((expense: any) => {
+      safeExpenses.forEach((expense: { category: string; amount: number }) => {
         expenseByCategory[expense.category] =
           (expenseByCategory[expense.category] || 0) + expense.amount;
       });

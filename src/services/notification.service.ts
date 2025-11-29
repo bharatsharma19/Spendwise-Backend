@@ -272,17 +272,17 @@ export class NotificationService extends BaseService {
     });
   }
 
-  private transformNotificationResponse(data: any): Notification {
+  private transformNotificationResponse(data: Record<string, unknown>): Notification {
     return {
-      id: data.id,
-      userId: data.user_id,
-      type: data.type,
-      title: data.title,
-      message: data.message,
-      data: data.data,
-      read: data.read,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
+      id: data.id as string,
+      userId: data.user_id as string,
+      type: data.type as Notification['type'],
+      title: data.title as string,
+      message: data.message as string,
+      data: data.data as Record<string, unknown>,
+      read: data.read as boolean,
+      createdAt: new Date(data.created_at as string | number | Date),
+      updatedAt: new Date(data.updated_at as string | number | Date),
     };
   }
 }

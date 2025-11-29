@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import Joi from 'joi';
 import { env } from '../config/env.config';
 import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/auth';
@@ -18,7 +19,9 @@ export class AuthController {
     return AuthController.instance;
   }
 
-  private handleValidationError(error: any): never {
+  private handleValidationError(
+    error: Joi.ValidationError | { details?: Array<{ message: string }> }
+  ): never {
     if (error.details && Array.isArray(error.details) && error.details.length > 0) {
       throw new ValidationError(error.details[0].message, []);
     }
@@ -114,7 +117,7 @@ export class AuthController {
           message: 'Please check your email to verify your account',
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Registration error:', error);
       next(error);
     }

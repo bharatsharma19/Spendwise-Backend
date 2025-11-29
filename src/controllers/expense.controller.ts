@@ -1,5 +1,7 @@
 import { NextFunction, Response } from 'express';
+import Joi from 'joi';
 import { AuthRequest } from '../middleware/auth';
+import { CreateExpenseDto } from '../models/expense.model';
 import { User } from '../models/user.model';
 import { ExpenseService } from '../services/expense.service';
 import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
@@ -32,7 +34,9 @@ export class ExpenseController {
     return ExpenseController.instance;
   }
 
-  private handleValidationError(error: any): never {
+  private handleValidationError(
+    error: Joi.ValidationError | { details?: Array<{ message: string }> }
+  ): never {
     if (error.details && Array.isArray(error.details) && error.details.length > 0) {
       throw new ValidationError(error.details[0].message, []);
     }
@@ -49,7 +53,7 @@ export class ExpenseController {
     }
   }
 
-  createExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  createExpense = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
@@ -59,7 +63,7 @@ export class ExpenseController {
         this.handleValidationError(error);
       }
 
-      const expenseData: any = {
+      const expenseData: CreateExpenseDto = {
         amount: value.amount,
         category: value.category,
         description: value.description,
@@ -70,23 +74,25 @@ export class ExpenseController {
         tags: value.tags,
         receiptUrl: value.receiptUrl,
         location: value.location,
+        ...(value.isRecurring && value.recurringFrequency
+          ? {
+              recurringDetails: {
+                frequency: value.recurringFrequency,
+                nextDueDate: value.date, // Default to expense date for now
+              },
+            }
+          : {}),
+        ...(value.isSplit && value.splitWith
+          ? {
+              splitDetails: {
+                splits: value.splitWith.map((userId: string) => ({
+                  userId,
+                  amount: value.splitAmount || 0, // Simplified split logic
+                })),
+              },
+            }
+          : {}),
       };
-
-      if (value.isRecurring && value.recurringFrequency) {
-        expenseData.recurringDetails = {
-          frequency: value.recurringFrequency,
-          nextDueDate: value.date, // Default to expense date for now
-        };
-      }
-
-      if (value.isSplit && value.splitWith) {
-        expenseData.splitDetails = {
-          splits: value.splitWith.map((userId: string) => ({
-            userId,
-            amount: value.splitAmount || 0, // Simplified split logic
-          })),
-        };
-      }
 
       const expense = await expenseService.createExpense(uid, expenseData);
 
@@ -99,7 +105,7 @@ export class ExpenseController {
     }
   };
 
-  getExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getExpense = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -119,7 +125,7 @@ export class ExpenseController {
     }
   };
 
-  getExpenses = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getExpenses = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -140,7 +146,7 @@ export class ExpenseController {
     }
   };
 
-  updateExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  updateExpense = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
@@ -155,7 +161,7 @@ export class ExpenseController {
         this.handleValidationError(error);
       }
 
-      const expenseData: any = {
+      const expenseData: Record<string, unknown> = {
         ...value,
       };
 
@@ -190,7 +196,11 @@ export class ExpenseController {
     }
   };
 
-  updateExpenseSplitStatus = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  updateExpenseSplitStatus = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -219,7 +229,7 @@ export class ExpenseController {
     }
   };
 
-  deleteExpense = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  deleteExpense = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -239,7 +249,11 @@ export class ExpenseController {
     }
   };
 
-  getExpenseSummary = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getExpenseSummary = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -258,7 +272,7 @@ export class ExpenseController {
     }
   };
 
-  getCategoryStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getCategoryStats = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -277,7 +291,7 @@ export class ExpenseController {
     }
   };
 
-  getExpenseTrends = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getExpenseTrends = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       this.validateUser(req);
 
@@ -296,7 +310,11 @@ export class ExpenseController {
     }
   };
 
-  getExpenseAnalytics = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  getExpenseAnalytics = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;

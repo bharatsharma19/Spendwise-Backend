@@ -11,6 +11,7 @@ router.use(authenticate);
 // Group management
 router.post('/', groupController.createGroup);
 router.post('/:groupId/members', groupController.addGroupMember);
+router.delete('/:groupId/members/:memberId', groupController.removeGroupMember);
 router.post('/:groupId/leave', groupController.leaveGroup);
 router.post('/:groupId/expenses', groupController.addGroupExpense);
 router.post('/:groupId/expenses/:expenseId/pay', groupController.markExpenseAsPaid);

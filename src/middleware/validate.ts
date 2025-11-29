@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import Joi from 'joi';
 import { ValidationError } from '../utils/error';
 
@@ -42,7 +42,9 @@ export const VALIDATION_CONSTANTS = {
 } as const;
 
 // Validation middleware with caching and detailed error messages
-export const validate = (schema: Joi.ObjectSchema) => {
+export const validate = (
+  schema: Joi.ObjectSchema
+): ((req: Request, _res: Response, next: NextFunction) => void) => {
   // Cache the schema for reuse
   const schemaKey = JSON.stringify(schema.describe());
   if (!schemaCache.has(schemaKey)) {
@@ -50,7 +52,7 @@ export const validate = (schema: Joi.ObjectSchema) => {
   }
   const cachedSchema = schemaCache.get(schemaKey)!;
 
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       const { error, value } = cachedSchema.validate(req.body, {
         abortEarly: false, // Return all errors, not just the first one
