@@ -1,18 +1,10 @@
 import { NextFunction, Request, Response } from 'express';
-import { Timestamp } from 'firebase-admin/firestore';
 import { env } from '../config/env.config';
-import { auth, db } from '../config/firebase';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/auth';
-import { User } from '../models/user.model';
-
-import { EmailService } from '../services/email.service';
-import { TwilioService } from '../services/twilio.service';
 import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
 import { logger } from '../utils/logger';
 import { authSchema } from '../validations/auth.schema';
-
-const emailService = EmailService.getInstance();
-const twilioService = TwilioService.getInstance();
 
 export class AuthController {
   private static instance: AuthController;
@@ -33,8 +25,7 @@ export class AuthController {
     throw new ValidationError('Validation failed', []);
   }
 
-  public register = async (req: Request, res: Response, next: NextFunction) => {
-    let userRecord;
+  public register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { error, value } = authSchema.register.validate(req.body);
       if (error) {
@@ -46,17 +37,24 @@ export class AuthController {
       // Format phone number to E.164 format
       const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
-      // Create user in Firebase Auth
-      userRecord = await auth.createUser({
+      // Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        phoneNumber: formattedPhoneNumber,
-        displayName,
-        emailVerified: false,
-        disabled: false,
+        phone: formattedPhoneNumber,
+        options: {
+          data: {
+            display_name: displayName,
+            phone_number: formattedPhoneNumber,
+          },
+        },
       });
 
-      if (!userRecord.email || !userRecord.uid) {
+      if (authError) {
+        throw new AppError(authError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+      }
+
+      if (!authData.user) {
         throw new AppError(
           'Failed to create user',
           HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -64,13 +62,13 @@ export class AuthController {
         );
       }
 
-      // Create user profile in Firestore
-      const userData: Omit<User, 'lastLoginAt'> = {
-        uid: userRecord.uid,
-        email: userRecord.email,
-        phoneNumber: userRecord.phoneNumber || '',
-        displayName: userRecord.displayName || '',
-        photoURL: userRecord.photoURL || '',
+      // Create user profile in 'profiles' table (if not handled by trigger)
+      const userData = {
+        id: authData.user.id,
+        email: authData.user.email,
+        phone_number: formattedPhoneNumber,
+        display_name: displayName,
+        photo_url: '',
         preferences: {
           currency: 'INR',
           language: 'en',
@@ -83,19 +81,18 @@ export class AuthController {
           budgetAlerts: true,
           monthlyBudget: 0,
         },
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        isEmailVerified: false,
-        isPhoneVerified: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_email_verified: false,
+        is_phone_verified: false,
         status: 'active',
       };
 
-      // ATOMIC OPERATION: Try to write to Firestore. If it fails, rollback Auth user.
-      try {
-        await db.collection('users').doc(userRecord.uid).set(userData);
-      } catch (firestoreError) {
-        logger.error('Firestore creation failed, rolling back Auth user:', firestoreError);
-        await auth.deleteUser(userRecord.uid);
+      const { error: profileError } = await supabase.from('profiles').upsert(userData);
+
+      if (profileError) {
+        logger.error('Profile creation failed:', profileError);
+        await supabase.auth.admin.deleteUser(authData.user.id);
         throw new AppError(
           'Failed to create user profile. Please try again.',
           HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -103,118 +100,66 @@ export class AuthController {
         );
       }
 
-      // Send email verification
-      await this.sendEmailVerification(userRecord.uid);
-
       res.status(201).json({
         status: 'success',
         data: {
-          uid: userRecord.uid,
-          email: userRecord.email,
-          phoneNumber: userRecord.phoneNumber,
-          displayName: userRecord.displayName,
+          uid: authData.user.id,
+          email: authData.user.email,
+          phoneNumber: formattedPhoneNumber,
+          displayName: displayName,
           message: 'Please check your email to verify your account',
         },
       });
     } catch (error: any) {
       logger.error('Registration error:', error);
-      if (error.code === 'auth/email-already-exists') {
-        next(new AppError('Email already exists', HttpStatusCode.CONFLICT, ErrorType.VALIDATION));
-      } else if (error.code === 'auth/invalid-email') {
-        next(
-          new AppError('Invalid email format', HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION)
-        );
-      } else if (error.code === 'auth/operation-not-allowed') {
-        next(
-          new AppError(
-            'Email/password accounts are not enabled. Please enable Email/Password authentication in Firebase Console.',
-            HttpStatusCode.BAD_REQUEST,
-            ErrorType.VALIDATION
-          )
-        );
-      } else if (error.code === 'auth/weak-password') {
-        next(
-          new AppError('Password is too weak', HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION)
-        );
-      } else if (error.code === 'auth/configuration-not-found') {
-        next(
-          new AppError(
-            'Firebase configuration error. Please check your Firebase project settings and enable Email/Password authentication.',
-            HttpStatusCode.INTERNAL_SERVER_ERROR,
-            ErrorType.DATABASE
-          )
-        );
-      } else {
-        next(error);
-      }
+      next(error);
     }
   };
 
-  public login = async (_req: Request, _res: Response, next: NextFunction) => {
-    // DEPRECATED: Server-side login is insecure and not recommended.
-    // The frontend should handle login via Firebase SDK and send the ID token.
+  public login = async (_req: Request, _res: Response, next: NextFunction): Promise<void> => {
     next(
       new AppError(
-        'Server-side login is deprecated. Please use client-side Firebase SDK to login and provide the ID token in the Authorization header.',
-        HttpStatusCode.GONE, // 410 Gone indicates the resource is no longer available
+        'Server-side login is deprecated. Please use client-side Supabase SDK to login.',
+        HttpStatusCode.GONE,
         ErrorType.VALIDATION
       )
     );
   };
 
-  public sendEmailVerification = async (uid: string) => {
+  public sendEmailVerification = async (uid: string): Promise<void> => {
     try {
-      const user = await auth.getUser(uid);
-      if (!user.email) {
-        throw new AppError(
-          'User email not found',
-          HttpStatusCode.BAD_REQUEST,
-          ErrorType.VALIDATION
-        );
+      const { data: user, error: userError } = await supabase.auth.admin.getUserById(uid);
+      if (userError || !user.user.email) {
+        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
       }
 
-      const actionCodeSettings = {
-        url: `${env.FRONTEND_URL}/verify-email?uid=${uid}`,
-        handleCodeInApp: true,
-      };
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: user.user.email,
+        options: {
+          emailRedirectTo: `${env.FRONTEND_URL}/verify-email`,
+        },
+      });
 
-      const verificationLink = await auth.generateEmailVerificationLink(
-        user.email,
-        actionCodeSettings
-      );
-      await emailService.sendVerificationEmail(user.email, verificationLink);
-      await auth.updateUser(uid, { emailVerified: false });
+      if (error) throw error;
     } catch (error) {
       logger.error('Error sending email verification:', error);
       throw error;
     }
   };
 
-  public verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { uid } = req.params;
-
-      if (!uid) {
-        throw new ValidationError('User ID is required', []);
-      }
-
-      // Update user's email verification status
-      await auth.updateUser(uid, { emailVerified: true });
-      await db.collection('users').doc(uid).update({
-        isEmailVerified: true,
-        updatedAt: Timestamp.now(),
-      });
-
-      res.json({
-        status: 'success',
-        message: 'Email verified successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
+  public verifyEmail = async (_req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    res.json({
+      status: 'success',
+      message: 'Please use the verification link sent to your email.',
+    });
   };
 
-  public resendEmailVerification = async (req: Request, res: Response, next: NextFunction) => {
+  public resendEmailVerification = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const { error, value } = authSchema.resendEmailVerification.validate(req.body);
       if (error) {
@@ -222,11 +167,18 @@ export class AuthController {
       }
 
       const { email } = value;
-      const user = await auth.getUserByEmail(email);
-      if (!user.uid) {
-        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
+
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: {
+          emailRedirectTo: `${env.FRONTEND_URL}/verify-email`,
+        },
+      });
+
+      if (resendError) {
+        throw new AppError(resendError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
       }
-      await this.sendEmailVerification(user.uid);
 
       res.json({
         status: 'success',
@@ -237,7 +189,7 @@ export class AuthController {
     }
   };
 
-  public verifyPhone = async (req: Request, res: Response, next: NextFunction) => {
+  public verifyPhone = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { error, value } = authSchema.verifyPhone.validate(req.body);
       if (error) {
@@ -245,22 +197,30 @@ export class AuthController {
       }
 
       const { phoneNumber } = value;
-      // Format phone number to E.164 format if needed
       const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
-      const result = await twilioService.sendOTP(formattedPhoneNumber);
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        phone: formattedPhoneNumber,
+      });
+
+      if (otpError) {
+        throw new AppError(otpError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+      }
 
       res.json({
         status: 'success',
         message: 'OTP sent successfully',
-        data: result,
       });
     } catch (error) {
       next(error);
     }
   };
 
-  public verifyPhoneCode = async (req: Request, res: Response, next: NextFunction) => {
+  public verifyPhoneCode = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const { error, value } = authSchema.verifyPhoneCode.validate(req.body);
       if (error) {
@@ -268,47 +228,36 @@ export class AuthController {
       }
 
       const { phoneNumber, code } = value;
-      // Format phone number to E.164 format if needed
       const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
-      const result = await twilioService.verifyOTP(formattedPhoneNumber, code);
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        phone: formattedPhoneNumber,
+        token: code,
+        type: 'sms',
+      });
 
-      if (result) {
-        // Update user's phone verification status
-        const userQuery = await db
-          .collection('users')
-          .where('phoneNumber', '==', formattedPhoneNumber)
-          .limit(1)
-          .get();
+      if (verifyError) {
+        throw new AppError(verifyError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+      }
 
-        if (!userQuery.empty) {
-          const userDoc = userQuery.docs[0];
-          if (userDoc) {
-            await db.collection('users').doc(userDoc.id).update({
-              isPhoneVerified: true,
-              updatedAt: Timestamp.now(),
-            });
-          }
-        }
-      } else {
-        throw new AppError(
-          'Invalid or expired OTP',
-          HttpStatusCode.BAD_REQUEST,
-          ErrorType.VALIDATION
-        );
+      if (data.user) {
+        await supabase
+          .from('profiles')
+          .update({ is_phone_verified: true, updated_at: new Date().toISOString() })
+          .eq('id', data.user.id);
       }
 
       res.json({
         status: 'success',
         message: 'Phone number verified successfully',
-        data: result,
+        data: data.session,
       });
     } catch (error) {
       next(error);
     }
   };
 
-  public resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+  public resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { error, value } = authSchema.resetPassword.validate(req.body);
       if (error) {
@@ -316,17 +265,14 @@ export class AuthController {
       }
 
       const { email } = value;
-      const user = await auth.getUserByEmail(email);
-      if (!user.uid) {
-        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
-      }
-      const actionCodeSettings = {
-        url: `${env.FRONTEND_URL}/reset-password`,
-        handleCodeInApp: true,
-      };
 
-      const resetLink = await auth.generatePasswordResetLink(email, actionCodeSettings);
-      await emailService.sendPasswordResetEmail(email, resetLink);
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${env.FRONTEND_URL}/reset-password`,
+      });
+
+      if (resetError) {
+        throw new AppError(resetError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+      }
 
       res.json({
         status: 'success',
@@ -337,7 +283,7 @@ export class AuthController {
     }
   };
 
-  public logout = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user;
       if (!user?.uid) {
@@ -348,11 +294,17 @@ export class AuthController {
         );
       }
 
-      // Update user's last logout time
-      await db.collection('users').doc(user.uid).update({
-        lastLogoutAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
+      // Supabase signOut is client side. Admin signOut requires JWT.
+      // If we don't have the session JWT here (only decoded uid), we can't easily sign out from backend for Supabase.
+      // But we can update the profile.
+
+      await supabase
+        .from('profiles')
+        .update({
+          last_logout_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.uid);
 
       res.json({
         status: 'success',
@@ -363,7 +315,11 @@ export class AuthController {
     }
   };
 
-  public getCurrentUser = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  public getCurrentUser = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       const user = req.user;
       if (!user?.uid) {
@@ -374,10 +330,13 @@ export class AuthController {
         );
       }
 
-      const userDoc = await db.collection('users').doc(user.uid).get();
-      const userData = userDoc.data() as User | undefined;
+      const { data: userData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.uid)
+        .single();
 
-      if (!userData) {
+      if (error || !userData) {
         throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
       }
 

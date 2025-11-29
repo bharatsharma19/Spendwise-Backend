@@ -1,5 +1,4 @@
 import { NextFunction, Response } from 'express';
-import { Timestamp } from 'firebase-admin/firestore';
 import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
 import { GroupService } from '../services/group.service';
@@ -56,7 +55,7 @@ export class GroupController {
         name: value.name,
         description: value.description,
         currency: value.currency,
-        createdBy: userId,
+        created_by: userId,
         settings: {
           allowMemberInvites: value.settings?.allowMemberInvites ?? true,
           requireApproval: value.settings?.requireApproval ?? false,
@@ -90,11 +89,10 @@ export class GroupController {
       }
 
       const memberData = {
-        userId,
-        displayName: value.displayName,
+        user_id: userId,
+        display_name: value.displayName,
         email: value.email,
         role: 'member' as const,
-        joinedAt: Timestamp.now(),
       };
 
       const member = await this.groupService.addGroupMember(groupId, memberData);
@@ -127,11 +125,11 @@ export class GroupController {
         currency: value.currency,
         category: value.category,
         description: value.description,
-        date: Timestamp.fromDate(new Date(value.date)),
+        date: new Date(value.date).toISOString(),
         location: value.location,
         tags: value.tags,
-        receiptUrl: value.receiptUrl,
-        paidBy: userId,
+        receipt_url: value.receiptUrl,
+        paid_by: userId,
       };
 
       const expense = await this.groupService.addGroupExpense(groupId, expenseData);

@@ -1,32 +1,19 @@
-import { Timestamp, WhereFilterOp } from 'firebase-admin/firestore';
-import { auth, db } from '../config/firebase';
-import { CreateUserDto, UpdateUserDto, User, UserResponse } from '../models/user.model';
+import { supabase } from '../config/supabase';
+import { Notification } from '../models/notification.model';
 import {
-  AppError,
-  AuthorizationError,
-  ErrorType,
-  HttpStatusCode,
-  NotFoundError,
-} from '../utils/error';
+  CreateUserDto,
+  UpdateUserDto,
+  User,
+  UserPreferences,
+  UserResponse,
+} from '../models/user.model';
+import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 import { BaseService } from './base.service';
 
 interface UserProfile {
   displayName?: string;
   photoURL?: string;
   phoneNumber?: string;
-}
-
-interface UserPreferences {
-  currency?: string;
-  language?: string;
-  notifications?: {
-    email?: boolean;
-    push?: boolean;
-    sms?: boolean;
-  };
-  theme?: 'light' | 'dark' | 'system';
-  budgetAlerts?: boolean;
-  monthlyBudget?: number;
 }
 
 interface UserSettings {
@@ -59,7 +46,7 @@ export class UserService extends BaseService {
   private static instance: UserService;
 
   private constructor() {
-    super('users');
+    super('profiles');
   }
 
   public static getInstance(): UserService {
@@ -69,45 +56,35 @@ export class UserService extends BaseService {
     return UserService.instance;
   }
 
+  // Note: User creation is handled by Supabase Auth and Triggers.
+  // This method might be used for additional setup if needed, or can be deprecated.
   async createUser(createUserData: CreateUserDto): Promise<UserResponse> {
+    // In Supabase, we don't create users manually in the 'profiles' table usually,
+    // the trigger does it. But if we need to update the profile immediately after signup:
     try {
-      // Create user in Firebase Auth
-      const userRecord = await auth.createUser({
-        email: createUserData.email,
-        password: createUserData.password,
-        phoneNumber: createUserData.phoneNumber,
-        displayName: createUserData.displayName,
-      });
+      // Wait a bit for trigger or just upsert
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: createUserData.displayName,
+          phone_number: createUserData.phoneNumber,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('email', createUserData.email) // Assuming email is unique and populated
+        .select()
+        .single();
 
-      // Default user preferences
-      const defaultPreferences = {
-        currency: 'INR',
-        language: 'en',
-        notifications: {
-          email: true,
-          push: true,
-          sms: false,
-        },
-        theme: 'system' as const,
-        budgetAlerts: true,
-      };
+      if (error) {
+        // If trigger hasn't run yet, we might need to wait or handle it.
+        // For now, let's assume the auth controller handles the signup and we just return the profile.
+        throw new AppError(
+          'Failed to setup user profile',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
+      }
 
-      // Create user document in Firestore
-      const userData = {
-        uid: userRecord.uid,
-        email: createUserData.email,
-        phoneNumber: createUserData.phoneNumber,
-        displayName: createUserData.displayName,
-        preferences: defaultPreferences,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        isEmailVerified: false,
-        isPhoneVerified: false,
-        status: 'active' as const,
-      };
-
-      const createdUser = await this.createDocument<User>(userData);
-      return this.transformUserResponse(createdUser);
+      return this.transformUserResponse(data as User);
     } catch (error) {
       throw new AppError(
         'Failed to create user',
@@ -133,17 +110,16 @@ export class UserService extends BaseService {
 
   async getUserByEmail(email: string): Promise<UserResponse> {
     try {
-      const users = await this.getCollection<User>([
-        { field: 'email', operator: '==' as WhereFilterOp, value: email },
-      ]);
-      if (users.length === 0) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (error || !data) {
         throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
       }
-      const user = users[0];
-      if (!user) {
-        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
-      }
-      return this.transformUserResponse(user);
+      return this.transformUserResponse(data as User);
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -154,31 +130,28 @@ export class UserService extends BaseService {
     }
   }
 
-  async generateAuthToken(uid: string): Promise<string> {
-    try {
-      return await auth.createCustomToken(uid);
-    } catch (error) {
-      throw new AppError(
-        'Failed to generate auth token',
-        HttpStatusCode.INTERNAL_SERVER_ERROR,
-        ErrorType.AUTHENTICATION
-      );
-    }
+  async generateAuthToken(_uid: string): Promise<string> {
+    // Supabase handles tokens. This might be needed for custom flows but usually client handles it.
+    // If we need to mint a token server-side, we need supabase-admin.
+    // However, typically the client logs in.
+    throw new AppError(
+      'Generate auth token not supported in Supabase migration yet',
+      HttpStatusCode.NOT_IMPLEMENTED,
+      ErrorType.AUTHENTICATION
+    );
   }
 
   async updatePhoneVerification(phoneNumber: string, isVerified: boolean): Promise<void> {
     try {
-      const users = await this.getCollection<User>([
-        { field: 'phoneNumber', operator: '==' as WhereFilterOp, value: phoneNumber },
-      ]);
-      if (users.length === 0) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ is_phone_verified: isVerified })
+        .eq('phone_number', phoneNumber)
+        .select();
+
+      if (error || !data || data.length === 0) {
         throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
       }
-      const user = users[0];
-      if (!user) {
-        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
-      }
-      await this.updateDocument<User>(user.uid, { isPhoneVerified: isVerified });
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -191,7 +164,8 @@ export class UserService extends BaseService {
 
   async sendPasswordResetEmail(email: string): Promise<void> {
     try {
-      await auth.generatePasswordResetLink(email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      if (error) throw error;
     } catch (error) {
       throw new AppError(
         'Failed to send password reset email',
@@ -203,17 +177,18 @@ export class UserService extends BaseService {
 
   async updateUser(uid: string, updateData: UpdateUserDto): Promise<UserResponse> {
     try {
-      const user = await this.getDocument<User>(uid);
-      const updateFields: Partial<User> = {
-        updatedAt: Timestamp.now(),
+      const updateFields: any = {
+        updated_at: new Date().toISOString(),
       };
 
-      if (updateData.displayName) updateFields.displayName = updateData.displayName;
-      if (updateData.phoneNumber) updateFields.phoneNumber = updateData.phoneNumber;
-      if (updateData.photoURL) updateFields.photoURL = updateData.photoURL;
+      if (updateData.displayName) updateFields.display_name = updateData.displayName;
+      if (updateData.phoneNumber) updateFields.phone_number = updateData.phoneNumber;
+      if (updateData.photoURL) updateFields.photo_url = updateData.photoURL;
       if (updateData.preferences) {
+        // Fetch current preferences to merge
+        const currentUser = await this.getDocument<User>(uid);
         updateFields.preferences = {
-          ...user.preferences,
+          ...currentUser.preferences,
           ...updateData.preferences,
         };
       }
@@ -232,9 +207,10 @@ export class UserService extends BaseService {
 
   async deleteUser(uid: string): Promise<void> {
     try {
-      await this.getDocument<User>(uid); // Check if user exists
+      const { error } = await supabase.auth.admin.deleteUser(uid);
+      if (error) throw error;
+      // Profile deletion should cascade if configured, or we delete it manually
       await this.deleteDocument(uid);
-      await auth.deleteUser(uid);
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -247,7 +223,7 @@ export class UserService extends BaseService {
 
   async updateUserPreferences(
     uid: string,
-    preferences: Partial<User['preferences']>
+    preferences: Partial<UserPreferences>
   ): Promise<UserResponse> {
     try {
       const user = await this.getDocument<User>(uid);
@@ -258,7 +234,7 @@ export class UserService extends BaseService {
 
       const updatedUser = await this.updateDocument<User>(uid, {
         preferences: updatedPreferences,
-        updatedAt: Timestamp.now(),
+        updated_at: new Date().toISOString(),
       });
       return this.transformUserResponse(updatedUser);
     } catch (error) {
@@ -274,170 +250,152 @@ export class UserService extends BaseService {
   private transformUserResponse(user: User): UserResponse {
     return {
       ...user,
-      createdAt: user.createdAt.toDate(),
-      updatedAt: user.updatedAt.toDate(),
-      lastLoginAt: user.lastLoginAt?.toDate(),
+      createdAt: new Date(user.created_at),
+      updatedAt: new Date(user.updated_at),
+      lastLoginAt: user.last_login_at ? new Date(user.last_login_at) : undefined,
     };
   }
 
-  async getProfile(userId: string) {
-    const userRef = db.collection('users').doc(userId);
-    const user = await userRef.get();
+  async getProfile(userId: string): Promise<UserResponse> {
+    return this.getUserById(userId);
+  }
 
-    if (!user.exists) {
-      throw new NotFoundError('User not found');
+  async updateProfile(userId: string, data: UserProfile): Promise<UserResponse> {
+    const updateData: any = {};
+    if (data.displayName) updateData.display_name = data.displayName;
+    if (data.photoURL) updateData.photo_url = data.photoURL;
+    if (data.phoneNumber) updateData.phone_number = data.phoneNumber;
+
+    const updatedUser = await this.updateDocument<User>(userId, updateData);
+    return this.transformUserResponse(updatedUser);
+  }
+
+  async updatePreferences(userId: string, data: UserPreferences): Promise<UserPreferences> {
+    const user = await this.updateUserPreferences(userId, data);
+    return user.preferences;
+  }
+
+  async updateSettings(userId: string, data: UserSettings): Promise<UserSettings> {
+    // Assuming settings is another JSONB column or merged into preferences
+    // For now, let's assume it's in preferences or a separate column 'settings'
+    // The model didn't show 'settings' but the interface does.
+    // I'll assume it's a column 'settings'
+    try {
+      const user = await this.getDocument<User & { settings: UserSettings }>(userId);
+      const updatedSettings = {
+        ...user.settings,
+        ...data,
+      };
+      await this.updateDocument(userId, { settings: updatedSettings });
+      return updatedSettings;
+    } catch (error) {
+      throw new AppError(
+        'Failed to update settings',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
     }
+  }
 
+  async getNotifications(userId: string): Promise<Notification[]> {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new AppError(
+        'Failed to get notifications',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+    return (data || []).map((n) => ({
+      ...n,
+      userId: n.user_id,
+      createdAt: new Date(n.created_at),
+      updatedAt: new Date(n.updated_at),
+    })) as unknown as Notification[];
+  }
+
+  async markNotificationAsRead(userId: string, notificationId: string): Promise<Notification> {
+    const { data, error } = await supabase
+      .from('notifications')
+      .update({ read: true, updated_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .eq('user_id', userId) // Security check
+      .select()
+      .single();
+
+    if (error) {
+      throw new AppError(
+        'Failed to mark notification as read',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
     return {
-      id: user.id,
-      ...user.data(),
-    };
-  }
-
-  async updateProfile(userId: string, data: UserProfile) {
-    const userRef = db.collection('users').doc(userId);
-    const user = await userRef.get();
-
-    if (!user.exists) {
-      throw new NotFoundError('User not found');
-    }
-
-    const updateData = {
       ...data,
-      updatedAt: Timestamp.now(),
-    };
-
-    await userRef.update(updateData);
-
-    const updatedUser = await userRef.get();
-    return {
-      id: updatedUser.id,
-      ...updatedUser.data(),
-    };
+      userId: data.user_id,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at),
+    } as unknown as Notification;
   }
 
-  async updatePreferences(userId: string, data: UserPreferences) {
-    const userRef = db.collection('users').doc(userId);
-    const user = await userRef.get();
+  async deleteNotification(userId: string, notificationId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId)
+      .eq('user_id', userId);
 
-    if (!user.exists) {
-      throw new NotFoundError('User not found');
+    if (error) {
+      throw new AppError(
+        'Failed to delete notification',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
     }
-
-    const updateData = {
-      preferences: {
-        ...user.data()?.preferences,
-        ...data,
-      },
-      updatedAt: Timestamp.now(),
-    };
-
-    await userRef.update(updateData);
-
-    const updatedUser = await userRef.get();
-    return updatedUser.data()?.preferences;
-  }
-
-  async updateSettings(userId: string, data: UserSettings) {
-    const userRef = db.collection('users').doc(userId);
-    const user = await userRef.get();
-
-    if (!user.exists) {
-      throw new NotFoundError('User not found');
-    }
-
-    const updateData = {
-      settings: {
-        ...user.data()?.settings,
-        ...data,
-      },
-      updatedAt: Timestamp.now(),
-    };
-
-    await userRef.update(updateData);
-
-    const updatedUser = await userRef.get();
-    return updatedUser.data()?.settings;
-  }
-
-  async getNotifications(userId: string) {
-    const notificationsRef = db.collection('notifications').where('userId', '==', userId);
-    const snapshot = await notificationsRef.orderBy('createdAt', 'desc').get();
-
-    return snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-  }
-
-  async markNotificationAsRead(userId: string, notificationId: string) {
-    const notificationRef = db.collection('notifications').doc(notificationId);
-    const notification = await notificationRef.get();
-
-    if (!notification.exists) {
-      throw new NotFoundError('Notification not found');
-    }
-
-    const notificationData = notification.data();
-    if (notificationData?.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    const updateData = {
-      read: true,
-      updatedAt: Timestamp.now(),
-    };
-
-    await notificationRef.update(updateData);
-
-    const updatedNotification = await notificationRef.get();
-    return {
-      id: updatedNotification.id,
-      ...updatedNotification.data(),
-    };
-  }
-
-  async deleteNotification(userId: string, notificationId: string) {
-    const notificationRef = db.collection('notifications').doc(notificationId);
-    const notification = await notificationRef.get();
-
-    if (!notification.exists) {
-      throw new NotFoundError('Notification not found');
-    }
-
-    const notificationData = notification.data();
-    if (notificationData?.userId !== userId) {
-      throw new AuthorizationError('Unauthorized access');
-    }
-
-    await notificationRef.delete();
   }
 
   async getUserStats(userId: string): Promise<UserStats> {
-    const [expensesSnapshot, groupsSnapshot, friendsSnapshot] = await Promise.all([
-      db.collection('expenses').where('userId', '==', userId).get(),
-      db.collection('groups').where('members', 'array-contains', userId).get(),
-      db.collection('users').doc(userId).collection('friends').get(),
-    ]);
+    try {
+      // Parallel queries
+      const [expensesResult, groupsResult, friendsResult] = await Promise.all([
+        supabase.from('expenses').select('amount, category').eq('user_id', userId),
+        supabase.from('group_members').select('id', { count: 'exact' }).eq('user_id', userId),
+        supabase.from('friends').select('id', { count: 'exact' }).eq('user_id', userId),
+      ]);
 
-    const expenses = expensesSnapshot.docs.map((doc: any) => doc.data());
-    const totalExpenses = expenses.length;
-    const monthlySpending = expenses.reduce((sum: any, expense: any) => sum + expense.amount, 0);
+      const expenses = expensesResult.data || [];
+      const totalExpenses = expenses.length;
+      const monthlySpending = expenses.reduce(
+        (sum: number, expense: any) => sum + expense.amount,
+        0
+      );
 
-    const categoryBreakdown = expenses.reduce(
-      (acc: any, expense: any) => {
-        acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
-        return acc;
-      },
-      {} as { [category: string]: number }
-    );
+      const categoryBreakdown = expenses.reduce(
+        (acc: any, expense: any) => {
+          acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
+          return acc;
+        },
+        {} as { [category: string]: number }
+      );
 
-    return {
-      totalExpenses,
-      totalGroups: groupsSnapshot.size,
-      totalFriends: friendsSnapshot.size,
-      monthlySpending,
-      categoryBreakdown,
-    };
+      return {
+        totalExpenses,
+        totalGroups: groupsResult.count || 0,
+        totalFriends: friendsResult.count || 0,
+        monthlySpending,
+        categoryBreakdown,
+      };
+    } catch (error) {
+      throw new AppError(
+        'Failed to get user stats',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
   }
 }

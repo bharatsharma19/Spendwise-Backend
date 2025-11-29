@@ -1,15 +1,31 @@
+import { Socket } from 'net';
 import app from './app';
 import { env } from './config/env.config';
+import { supabase } from './config/supabase';
 import { logger } from './utils/logger';
 
 // Keep track of connections to close during shutdown
-const connections = new Set<any>();
+const connections = new Set<Socket>();
 
 // Track the server instance
-const server = app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, async () => {
   logger.info(`Server is running on port ${env.PORT}`);
   logger.info(`Environment: ${env.NODE_ENV}`);
   logger.info(`Server URL: http://localhost:${env.PORT}`);
+
+  try {
+    // Verify Supabase connection by making a simple query
+    const { error } = await supabase
+      .from('profiles')
+      .select('count', { count: 'exact', head: true });
+    if (error) {
+      logger.error('Supabase connection failed:', error.message);
+    } else {
+      logger.info('Supabase Connected Successfully');
+    }
+  } catch (err: any) {
+    logger.error('Supabase connection error:', err.message);
+  }
 });
 
 // Track connections for graceful shutdown

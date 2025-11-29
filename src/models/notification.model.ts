@@ -1,5 +1,3 @@
-import { Timestamp } from 'firebase-admin/firestore';
-
 export type NotificationType = 'group_invite' | 'expense_added' | 'expense_paid' | 'group_settled';
 
 export interface Notification {
@@ -10,6 +8,6 @@ export interface Notification {
   message: string;
   data: Record<string, any>;
   read: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: Date;
+  updatedAt: Date;
 }

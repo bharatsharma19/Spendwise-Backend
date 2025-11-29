@@ -7,14 +7,16 @@ const requiredEnvVars = [
   'NODE_ENV',
   'PORT',
   'FRONTEND_URL',
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_PRIVATE_KEY',
-  'FIREBASE_CLIENT_EMAIL',
-  'JWT_SECRET',
-  'JWT_EXPIRES_IN',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'EMAIL_USER',
+  'EMAIL_APP_PASSWORD',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_PHONE_NUMBER',
 ] as const;
 
-export const validateEnv = () => {
+export const validateEnv = (): void => {
   const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
 
   if (missingEnvVars.length > 0) {
@@ -36,14 +38,9 @@ export const validateEnv = () => {
     throw new Error('FRONTEND_URL must be a valid URL');
   }
 
-  if (process.env.JWT_SECRET!.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long');
-  }
-
-  // Validate Firebase credentials
   try {
-    JSON.parse(process.env.FIREBASE_PRIVATE_KEY!);
+    new URL(process.env.SUPABASE_URL!);
   } catch {
-    throw new Error('FIREBASE_PRIVATE_KEY must be a valid JSON string');
+    throw new Error('SUPABASE_URL must be a valid URL');
   }
 };

@@ -1,8 +1,7 @@
-import { BaseService } from './base.service';
+import { supabase } from '../config/supabase';
 import { Notification } from '../models/notification.model';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
-import { db } from '../config/firebase';
-import { Timestamp } from 'firebase-admin/firestore';
+import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
+import { BaseService } from './base.service';
 
 export class NotificationService extends BaseService {
   private static instance: NotificationService;
@@ -22,15 +21,27 @@ export class NotificationService extends BaseService {
     data: Omit<Notification, 'id' | 'createdAt' | 'updatedAt' | 'read'>
   ): Promise<Notification> {
     try {
-      const notification = await this.createDocument<Notification>({
-        ...data,
+      const notificationData = {
+        user_id: data.userId,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        data: data.data, // JSONB
         read: false,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
-      return notification;
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: notification, error } = await supabase
+        .from('notifications')
+        .insert(notificationData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return this.transformNotificationResponse(notification);
     } catch (error) {
-      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to create notification',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -41,9 +52,16 @@ export class NotificationService extends BaseService {
 
   public async getUserNotifications(userId: string): Promise<Notification[]> {
     try {
-      return this.getCollection<Notification>([{ field: 'userId', operator: '==', value: userId }]);
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (notifications || []).map((n) => this.transformNotificationResponse(n));
     } catch (error) {
-      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to get user notifications',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -54,12 +72,17 @@ export class NotificationService extends BaseService {
 
   public async getUnreadNotifications(userId: string): Promise<Notification[]> {
     try {
-      return this.getCollection<Notification>([
-        { field: 'userId', operator: '==', value: userId },
-        { field: 'read', operator: '==', value: false },
-      ]);
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('read', false)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (notifications || []).map((n) => this.transformNotificationResponse(n));
     } catch (error) {
-      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to get unread notifications',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -73,15 +96,35 @@ export class NotificationService extends BaseService {
     notificationId: string
   ): Promise<Notification> {
     try {
-      const notification = await this.getDocument<Notification>(notificationId);
-      if (notification.userId !== userId) {
+      // Verify ownership
+      const { data: notification, error: fetchError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('id', notificationId)
+        .single();
+
+      if (fetchError || !notification) {
+        throw new AppError('Notification not found', HttpStatusCode.NOT_FOUND, ErrorType.DATABASE);
+      }
+
+      if (notification.user_id !== userId) {
         throw new AppError(
           'Unauthorized to update this notification',
           HttpStatusCode.FORBIDDEN,
           ErrorType.AUTHORIZATION
         );
       }
-      return this.updateDocument<Notification>(notificationId, { read: true });
+
+      const { data: updatedNotification, error: updateError } = await supabase
+        .from('notifications')
+        .update({ read: true, updated_at: new Date().toISOString() })
+        .eq('id', notificationId)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      return this.transformNotificationResponse(updatedNotification);
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -94,17 +137,14 @@ export class NotificationService extends BaseService {
 
   public async markAllNotificationsAsRead(userId: string): Promise<void> {
     try {
-      const notifications = await this.getUnreadNotifications(userId);
-      const batch = db.batch();
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .eq('read', false);
 
-      notifications.forEach((notification) => {
-        const docRef = db.collection(this.collection).doc(notification.id);
-        batch.update(docRef, { read: true });
-      });
-
-      await batch.commit();
+      if (error) throw error;
     } catch (error) {
-      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to mark all notifications as read',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -115,15 +155,31 @@ export class NotificationService extends BaseService {
 
   public async deleteNotification(userId: string, notificationId: string): Promise<void> {
     try {
-      const notification = await this.getDocument<Notification>(notificationId);
-      if (notification.userId !== userId) {
+      // Verify ownership
+      const { data: notification, error: fetchError } = await supabase
+        .from('notifications')
+        .select('user_id')
+        .eq('id', notificationId)
+        .single();
+
+      if (fetchError || !notification) {
+        throw new AppError('Notification not found', HttpStatusCode.NOT_FOUND, ErrorType.DATABASE);
+      }
+
+      if (notification.user_id !== userId) {
         throw new AppError(
           'Unauthorized to delete this notification',
           HttpStatusCode.FORBIDDEN,
           ErrorType.AUTHORIZATION
         );
       }
-      await this.deleteDocument(notificationId);
+
+      const { error: deleteError } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', notificationId);
+
+      if (deleteError) throw deleteError;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -214,5 +270,19 @@ export class NotificationService extends BaseService {
         groupName,
       },
     });
+  }
+
+  private transformNotificationResponse(data: any): Notification {
+    return {
+      id: data.id,
+      userId: data.user_id,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      data: data.data,
+      read: data.read,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at),
+    };
   }
 }

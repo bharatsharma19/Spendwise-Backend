@@ -1,5 +1,3 @@
-import { Timestamp } from "firebase-admin/firestore";
-
 export interface UserPreferences {
   currency: string;
   language: string;
@@ -8,7 +6,7 @@ export interface UserPreferences {
     push: boolean;
     sms: boolean;
   };
-  theme: "light" | "dark" | "system";
+  theme: 'light' | 'dark' | 'system';
   budgetAlerts: boolean;
   monthlyBudget?: number;
 }
@@ -20,12 +18,12 @@ export interface User {
   displayName?: string;
   photoURL?: string;
   preferences: UserPreferences;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  lastLoginAt?: Timestamp;
+  created_at: string;
+  updated_at: string;
+  last_login_at?: string;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
-  status: "active" | "inactive" | "suspended";
+  status: 'active' | 'inactive' | 'suspended';
 }
 
 export interface CreateUserDto {
@@ -54,5 +52,5 @@ export interface UserResponse {
   lastLoginAt?: Date;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
-  status: "active" | "inactive" | "suspended";
+  status: 'active' | 'inactive' | 'suspended';
 }

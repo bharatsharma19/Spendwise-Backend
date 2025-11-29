@@ -1,10 +1,10 @@
 import { NextFunction, Request, Response } from 'express';
-import { getAuth } from 'firebase-admin/auth';
+import { supabase } from '../config/supabase';
 import { User } from '../models/user.model';
 import { AuthenticationError } from '../utils/error';
 
 export interface AuthRequest extends Request {
-  user?: User; // This is now a Partial User effectively
+  user?: User;
 }
 
 export const authenticate = async (req: Request, _res: Response, next: NextFunction) => {
@@ -15,40 +15,34 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     }
 
     const token = authHeader.split(' ')[1];
-    if (!token) {
-      throw new AuthenticationError('Invalid token format');
-    }
 
-    const decodedToken = await getAuth().verifyIdToken(token);
-    if (!decodedToken.uid) {
+    // Verify token with Supabase Auth
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
       throw new AuthenticationError('Invalid token');
     }
 
-    // REAL WORLD FIX: Do not hardcode default preferences here.
-    // If you populate defaults here, you might accidentally overwrite
-    // real DB data if a controller uses this object to "update" the user.
-    // We only populate what we verify from the token.
+    // Fetch user profile from 'profiles' table (renamed from 'users' collection to avoid conflict with auth schema)
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
     (req as AuthRequest).user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email || '',
-      phoneNumber: decodedToken.phone_number || '',
-      displayName: decodedToken.name || '',
-      photoURL: decodedToken.picture || '',
-      isEmailVerified: decodedToken.email_verified || false,
-      isPhoneVerified: !!decodedToken.phone_number,
-      // Defaulting status to active for the request context,
-      // but specific business logic should check the DB if 'suspended' is a real concern.
-      status: 'active',
-      // Initialize required empty objects to prevent crashes, but don't assume values
-      // preferences: {} as any, // REMOVED: Do not assume defaults
-      createdAt: {} as any,
-      updatedAt: {} as any,
-    } as User; // Cast to User but be aware it's partial
+      uid: user.id,
+      email: user.email || '',
+      phoneNumber: user.phone || '',
+      // Merge Auth data with Profile data
+      ...userProfile,
+    } as User; // Cast to User model
 
     next();
   } catch (error) {
-    // Log the actual error for debugging
-    // console.error(error);
     next(new AuthenticationError('Authentication failed'));
   }
 };

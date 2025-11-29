@@ -1,5 +1,3 @@
-import { Timestamp } from 'firebase-admin/firestore';
-
 export type ExpenseCategory =
   | 'food'
   | 'transportation'
@@ -12,41 +10,37 @@ export type ExpenseCategory =
   | 'other';
 
 export interface ExpenseSplit {
-  userId: string;
+  user_id: string;
   amount: number;
   status: 'pending' | 'paid' | 'cancelled';
-  paidAt?: Timestamp;
+  paid_at?: string;
 }
 
 export interface Expense {
   id: string;
-  userId: string;
+  user_id: string;
   amount: number;
   currency: string;
   category: ExpenseCategory;
   description: string;
-  date: Timestamp;
+  date: string;
   location?: {
     latitude: number;
     longitude: number;
     address?: string;
   };
   tags?: string[];
-  receiptUrl?: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  isRecurring: boolean;
-  recurringDetails?: {
-    frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
-    nextDueDate: Timestamp;
-    endDate?: Timestamp;
-  };
-  isSplit: boolean;
-  splitDetails?: {
+  receipt_url?: string;
+  created_at: string;
+  updated_at: string;
+  is_recurring: boolean;
+  recurring_frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  is_split: boolean;
+  split_details?: {
     splits: ExpenseSplit[];
-    totalSplits: number;
-    paidSplits: number;
-    splitAmount: number;
+    total_splits: number;
+    paid_splits: number;
+    split_amount: number;
   };
 }
 

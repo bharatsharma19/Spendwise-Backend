@@ -1,9 +1,9 @@
-import { Response, NextFunction } from 'express';
-import { ExpenseService } from '../services/expense.service';
-import { ValidationError, AppError, HttpStatusCode, ErrorType } from '../utils/error';
+import { NextFunction, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { expenseSchema } from '../validations/expense.schema';
 import { User } from '../models/user.model';
+import { ExpenseService } from '../services/expense.service';
+import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
+import { expenseSchema } from '../validations/expense.schema';
 
 const expenseService = ExpenseService.getInstance();
 
@@ -59,7 +59,36 @@ export class ExpenseController {
         this.handleValidationError(error);
       }
 
-      const expense = await expenseService.createExpense(uid, value);
+      const expenseData: any = {
+        amount: value.amount,
+        category: value.category,
+        description: value.description,
+        date: value.date,
+        currency: value.currency,
+        isRecurring: value.isRecurring,
+        isSplit: value.isSplit,
+        tags: value.tags,
+        receiptUrl: value.receiptUrl,
+        location: value.location,
+      };
+
+      if (value.isRecurring && value.recurringFrequency) {
+        expenseData.recurringDetails = {
+          frequency: value.recurringFrequency,
+          nextDueDate: value.date, // Default to expense date for now
+        };
+      }
+
+      if (value.isSplit && value.splitWith) {
+        expenseData.splitDetails = {
+          splits: value.splitWith.map((userId: string) => ({
+            userId,
+            amount: value.splitAmount || 0, // Simplified split logic
+          })),
+        };
+      }
+
+      const expense = await expenseService.createExpense(uid, expenseData);
 
       res.status(201).json({
         status: 'success',
@@ -126,7 +155,31 @@ export class ExpenseController {
         this.handleValidationError(error);
       }
 
-      const expense = await expenseService.updateExpense(uid, id, value);
+      const expenseData: any = {
+        ...value,
+      };
+
+      // Map flat fields to nested objects if present
+      if (value.recurringFrequency) {
+        expenseData.recurringDetails = {
+          frequency: value.recurringFrequency,
+          nextDueDate: value.date || new Date(),
+        };
+        delete expenseData.recurringFrequency;
+      }
+
+      if (value.splitWith) {
+        expenseData.splitDetails = {
+          splits: value.splitWith.map((userId: string) => ({
+            userId,
+            amount: value.splitAmount || 0,
+          })),
+        };
+        delete expenseData.splitWith;
+        delete expenseData.splitAmount;
+      }
+
+      const expense = await expenseService.updateExpense(uid, id, expenseData);
 
       res.json({
         status: 'success',

@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.config';
-import { AppError, HttpStatusCode, ErrorType } from '../utils/error';
+import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 
 export class EmailService {
   private static instance: EmailService;
@@ -12,7 +12,9 @@ export class EmailService {
     }
 
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465, // SSL
+      secure: true,
       auth: {
         user: env.EMAIL_USER,
         pass: env.EMAIL_APP_PASSWORD,
