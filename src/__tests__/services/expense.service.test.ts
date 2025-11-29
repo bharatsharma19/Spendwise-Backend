@@ -1,10 +1,11 @@
-import { ExpenseService } from '../../services/expense.service';
+import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../config/firebase';
-import { NotFoundError, AuthorizationError } from '../../utils/error';
 import { CreateExpenseDto } from '../../models/expense.model';
+import { ExpenseService } from '../../services/expense.service';
+import { AuthorizationError, NotFoundError } from '../../utils/error';
 
 // Mock Firebase
-jest.mock('../../src/config/firebase', () => ({
+jest.mock('../../config/firebase', () => ({
   db: {
     collection: jest.fn(),
   },
@@ -30,9 +31,9 @@ describe('ExpenseService', () => {
     amount: 100,
     category: 'food',
     description: 'Lunch',
-    date: mockDate,
-    createdAt: mockDate,
-    updatedAt: mockDate,
+    date: Timestamp.fromDate(mockDate),
+    createdAt: Timestamp.fromDate(mockDate),
+    updatedAt: Timestamp.fromDate(mockDate),
     currency: 'INR',
     isRecurring: false,
     isSplit: false,

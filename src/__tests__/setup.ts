@@ -22,7 +22,7 @@ jest.mock('firebase-admin/firestore', () => ({
 }));
 
 // Mock Firebase
-jest.mock('../src/config/firebase', () => ({
+jest.mock('../config/firebase', () => ({
   db: {
     collection: jest.fn(),
   },
