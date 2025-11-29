@@ -1,3 +1,8 @@
+// Mock uuid to prevent ESM issues
+jest.mock('uuid', () => ({
+  v4: jest.fn(() => 'mock-uuid-' + Math.random().toString(36).substring(7)),
+}));
+
 // Mock Firebase Admin
 const mockDate = new Date('2023-01-01');
 
