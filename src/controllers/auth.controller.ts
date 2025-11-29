@@ -63,6 +63,10 @@ export class AuthController {
       }
 
       // Create user profile in 'profiles' table (if not handled by trigger)
+      // Note: If email confirmation is enabled, the user might not be fully active yet.
+      // However, we use Service Role key so we can insert into profiles.
+      // Frontend should handle the "check email" flow.
+      // We use upsert to handle potential race conditions if a trigger also creates the profile.
       const userData = {
         id: authData.user.id,
         email: authData.user.email,

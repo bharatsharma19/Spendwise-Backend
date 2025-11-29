@@ -358,7 +358,8 @@ export class GroupService extends BaseService {
       const memberBalances: Record<string, number> = {};
       safeExpenses.forEach((expense: any) => {
         memberBalances[expense.paid_by] = (memberBalances[expense.paid_by] || 0) + expense.amount;
-        (expense.splits as ExpenseSplit[]).forEach((split) => {
+        const splits = Array.isArray(expense.splits) ? (expense.splits as ExpenseSplit[]) : [];
+        splits.forEach((split) => {
           memberBalances[split.user_id] = (memberBalances[split.user_id] || 0) - split.amount;
         });
       });

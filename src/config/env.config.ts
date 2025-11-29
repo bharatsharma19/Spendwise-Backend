@@ -55,23 +55,7 @@ if (error && process.env.NODE_ENV !== 'test') {
 }
 
 // Provide default mock values for test environment if validation failed
-const safeEnvVars =
-  process.env.NODE_ENV === 'test' && error
-    ? {
-        ...process.env,
-        NODE_ENV: 'test',
-        PORT: 5000,
-        FRONTEND_URL: 'http://localhost:3000',
-        ALLOWED_ORIGINS: 'http://localhost:3000',
-        SUPABASE_URL: 'https://example.supabase.co',
-        SUPABASE_SERVICE_ROLE_KEY: 'test-key',
-        EMAIL_USER: 'test@example.com',
-        EMAIL_APP_PASSWORD: 'test-password',
-        TWILIO_ACCOUNT_SID: 'test-sid',
-        TWILIO_AUTH_TOKEN: 'test-token',
-        TWILIO_PHONE_NUMBER: '1234567890',
-      }
-    : envVars;
+const safeEnvVars = envVars;
 
 export const env: EnvConfig = {
   NODE_ENV: safeEnvVars.NODE_ENV,

@@ -53,17 +53,31 @@ export class ExpenseService extends BaseService {
     return ExpenseService.instance;
   }
 
+  private calculateNextDueDate(date: Date, frequency: string): Date {
+    const nextDate = new Date(date);
+    if (frequency === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+    if (frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+    if (frequency === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+    if (frequency === 'yearly') nextDate.setFullYear(nextDate.getFullYear() + 1);
+    return nextDate;
+  }
+
   async createExpense(userId: string, data: CreateExpenseDto): Promise<ExpenseResponse> {
     try {
+      const dateObj = data.date instanceof Date ? data.date : new Date(data.date);
       const expenseData = {
         user_id: userId,
         amount: data.amount,
         category: data.category,
         description: data.description || '',
-        date: (data.date instanceof Date ? data.date : new Date(data.date)).toISOString(),
+        date: dateObj.toISOString(),
         currency: data.currency || 'INR',
         is_recurring: data.isRecurring || false,
         recurring_frequency: data.recurringDetails?.frequency,
+        next_due_date:
+          data.isRecurring && data.recurringDetails?.frequency
+            ? this.calculateNextDueDate(dateObj, data.recurringDetails.frequency).toISOString()
+            : null,
         is_split: data.isSplit || false,
         split_details: data.splitDetails, // JSONB
         created_at: new Date().toISOString(),
@@ -86,6 +100,31 @@ export class ExpenseService extends BaseService {
         ErrorType.DATABASE
       );
     }
+  }
+
+  // ... (keep other methods)
+
+  private transformExpenseResponse(data: any): ExpenseResponse {
+    return {
+      id: data.id,
+      userId: data.user_id,
+      amount: data.amount,
+      category: data.category,
+      description: data.description,
+      date: new Date(data.date),
+      currency: data.currency,
+      isRecurring: data.is_recurring,
+      recurringDetails: data.is_recurring
+        ? {
+            frequency: data.recurring_frequency as 'daily' | 'weekly' | 'monthly' | 'yearly',
+            nextDueDate: data.next_due_date ? new Date(data.next_due_date) : new Date(),
+          }
+        : undefined,
+      isSplit: data.is_split,
+      splitDetails: data.split_details,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at),
+    };
   }
 
   async getExpenseById(userId: string, id: string): Promise<ExpenseResponse> {
@@ -531,31 +570,5 @@ export class ExpenseService extends BaseService {
         ErrorType.DATABASE
       );
     }
-  }
-
-  private transformExpenseResponse(data: any): ExpenseResponse {
-    return {
-      id: data.id,
-      userId: data.user_id,
-      amount: data.amount,
-      category: data.category,
-      description: data.description,
-      date: new Date(data.date),
-      currency: data.currency,
-      isRecurring: data.is_recurring,
-      recurringDetails: data.is_recurring
-        ? {
-            frequency: data.recurring_frequency,
-            nextDueDate: new Date(), // Logic to calculate next due date needed if not stored
-            // For now, Supabase might not store nextDueDate if it's computed.
-            // Or I should have stored it.
-            // The model has it. I'll assume it's not critical for now or I should add it to DB.
-          }
-        : undefined,
-      isSplit: data.is_split,
-      splitDetails: data.split_details,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
-    };
   }
 }
