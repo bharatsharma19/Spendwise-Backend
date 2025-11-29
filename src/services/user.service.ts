@@ -171,31 +171,7 @@ export class UserService extends BaseService {
     displayName?: string
   ): Promise<{ user: UserResponse; isNewUser: boolean }> {
     try {
-      let user: UserResponse | null = null;
-
-      // Try to find existing user
-      if (email) {
-        try {
-          user = await this.getUserByEmail(email);
-        } catch (error) {
-          // User not found, will create
-        }
-      }
-
-      if (!user && phoneNumber) {
-        try {
-          user = await this.getUserByPhone(phoneNumber);
-        } catch (error) {
-          // User not found, will create
-        }
-      }
-
-      // If user exists, return it
-      if (user) {
-        return { user, isNewUser: false };
-      }
-
-      // User doesn't exist, create new user
+      // 1. Sanitize Inputs
       if (!email && !phoneNumber) {
         throw new AppError(
           'Either email or phoneNumber is required',
@@ -204,199 +180,130 @@ export class UserService extends BaseService {
         );
       }
 
-      // Generate a temporary password (user will need to reset it)
-      const tempPassword =
-        Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
-
-      const formattedPhone = phoneNumber
-        ? phoneNumber.startsWith('+')
-          ? phoneNumber
-          : `+${phoneNumber}`
-        : undefined;
-
-      // Create user in Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: email || undefined,
-        phone: formattedPhone || undefined,
-        password: tempPassword,
-        email_confirm: false, // User needs to verify
-        phone_confirm: false, // User needs to verify
-        user_metadata: {
-          display_name: displayName || 'New User',
-          phone_number: formattedPhone,
-        },
-      });
-
-      if (authError || !authData.user) {
-        // If phone/email already exists, try to find the existing user
-        if (
-          authError?.message?.includes('already registered') ||
-          authError?.message?.includes('already exists')
-        ) {
-          // Try to find user by phone in Supabase Auth
-          if (formattedPhone) {
-            try {
-              const { data: users } = await supabase.auth.admin.listUsers({
-                perPage: 1000, // Increase limit to find user
-              });
-              const existingAuthUser = users.users.find(
-                (u) =>
-                  (formattedPhone && u.phone === formattedPhone) || (email && u.email === email)
-              );
-
-              if (existingAuthUser) {
-                // User exists in Auth, check if profile exists
-                try {
-                  const existingUser = await this.getUserById(existingAuthUser.id);
-                  return { user: existingUser, isNewUser: false };
-                } catch (profileLookupError) {
-                  // Profile doesn't exist, create it
-                  const userData = {
-                    id: existingAuthUser.id,
-                    email: existingAuthUser.email || email || '',
-                    phone_number: existingAuthUser.phone || formattedPhone || '',
-                    display_name:
-                      displayName || existingAuthUser.user_metadata?.display_name || 'New User',
-                    photo_url: '',
-                    preferences: {
-                      currency: 'INR',
-                      language: 'en',
-                      notifications: {
-                        email: true,
-                        push: true,
-                        sms: true,
-                      },
-                      theme: 'system',
-                      budgetAlerts: true,
-                      monthlyBudget: 0,
-                    },
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    is_email_verified: existingAuthUser.email_confirmed_at ? true : false,
-                    is_phone_verified: existingAuthUser.phone_confirmed_at ? true : false,
-                    status: 'active',
-                  };
-
-                  const { data: profileData, error: profileError } = await supabase
-                    .from('profiles')
-                    .insert(userData)
-                    .select()
-                    .single();
-
-                  if (profileError || !profileData) {
-                    throw new AppError(
-                      'Failed to create user profile',
-                      HttpStatusCode.INTERNAL_SERVER_ERROR,
-                      ErrorType.DATABASE
-                    );
-                  }
-
-                  return { user: this.transformUserResponse(profileData), isNewUser: false };
-                }
-              }
-            } catch (findError) {
-              // If we can't find the user, throw the original error
-            }
-          }
-        }
-
-        throw new AppError(
-          authError?.message || 'Failed to create user',
-          HttpStatusCode.INTERNAL_SERVER_ERROR,
-          ErrorType.DATABASE
-        );
+      // Normalize phone: remove spaces/dashes, ensure + prefix if missing
+      let formattedPhone: string | undefined;
+      if (phoneNumber) {
+        const cleaned = phoneNumber.replace(/[^0-9+]/g, '');
+        formattedPhone = cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
       }
 
-      // Create user profile
-      const userData = {
-        id: authData.user.id,
-        email: email || authData.user.email || '',
-        phone_number: formattedPhone || authData.user.phone || '',
-        display_name: displayName || 'New User',
-        photo_url: '',
-        preferences: {
-          currency: 'INR',
-          language: 'en',
-          notifications: {
-            email: true,
-            push: true,
-            sms: true,
-          },
-          theme: 'system',
-          budgetAlerts: true,
-          monthlyBudget: 0,
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_email_verified: false,
-        is_phone_verified: false,
-        status: 'active',
-      };
+      // 2. Try to find existing profile in DB first (Fastest)
+      if (email) {
+        try {
+          const u = await this.getUserByEmail(email);
+          return { user: u, isNewUser: false };
+        } catch {}
+      }
+      if (formattedPhone) {
+        try {
+          const u = await this.getUserByPhone(formattedPhone);
+          return { user: u, isNewUser: false };
+        } catch {}
+      }
 
-      const { data: profileData, error: profileError } = await supabase
+      // 3. Prepare Auth Data
+      // Use a consistent shadow email for phone-only users to allow easier lookup
+      const effectiveEmail =
+        email || `phone_${formattedPhone!.replace(/[^0-9]/g, '')}@shadow.spendwise.local`;
+      const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
+
+      let authUserId: string | undefined;
+      let isNewAuth = false;
+
+      // 4. Create or Find Auth User
+      try {
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: effectiveEmail,
+          phone: formattedPhone, // Supabase handles E.164 validation
+          password: tempPassword,
+          email_confirm: true,
+          phone_confirm: true,
+          user_metadata: { display_name: displayName || 'Invited User' },
+        });
+
+        if (authError) throw authError;
+        if (authData.user) {
+          authUserId = authData.user.id;
+          isNewAuth = true;
+        }
+      } catch (err: any) {
+        // Handle "User already registered"
+        // listUsers defaults to 50. Increase to 1000 to find existing users in dev/test.
+        const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+
+        // Robust finder
+        const existing = listData.users.find((u) => {
+          const emailMatch = u.email?.toLowerCase() === effectiveEmail.toLowerCase();
+          const phoneMatch = formattedPhone && u.phone === formattedPhone;
+          return emailMatch || phoneMatch;
+        });
+
+        if (existing) {
+          authUserId = existing.id;
+        } else {
+          logger.error(`Could not create or find user: ${effectiveEmail} / ${formattedPhone}`);
+          throw new AppError(
+            'User exists but could not be located',
+            HttpStatusCode.INTERNAL_SERVER_ERROR,
+            ErrorType.DATABASE
+          );
+        }
+      }
+
+      if (!authUserId) throw new Error('User ID could not be determined');
+
+      // 5. Create Profile (Upsert to handle race conditions)
+      const { data: newProfile, error: profileError } = await supabase
         .from('profiles')
-        .insert(userData)
+        .upsert({
+          id: authUserId,
+          email: effectiveEmail,
+          phone_number: formattedPhone || '',
+          display_name: displayName || 'Invited User',
+          status: 'active',
+          // Preserve verification status if updating
+          updated_at: new Date().toISOString(),
+        })
         .select()
         .single();
 
       if (profileError) {
-        // If profile creation fails, try to clean up auth user
-        await supabase.auth.admin.deleteUser(authData.user.id);
+        logger.error('Profile upsert failed', profileError);
         throw new AppError(
-          'Failed to create user profile',
+          'Failed to create profile',
           HttpStatusCode.INTERNAL_SERVER_ERROR,
           ErrorType.DATABASE
         );
       }
 
-      if (!profileData) {
-        throw new AppError(
-          'Failed to create user profile',
-          HttpStatusCode.INTERNAL_SERVER_ERROR,
-          ErrorType.DATABASE
-        );
-      }
+      const user = this.transformUserResponse(newProfile);
 
-      user = this.transformUserResponse(profileData);
-
-      // Send verification email/SMS for newly created users
-      // Email: Send to users with email addresses
-      // SMS: Send to users with phone numbers
-      try {
-        if (email) {
-          // Generate password reset link (user will set password when they verify)
-          const resetLink = `${env.FRONTEND_URL}/verify-email?token=${authData.user.id}`;
-          try {
-            await this.emailService.sendVerificationEmail(email, resetLink);
-            logger.info(`Verification email sent to: ${email}`);
-          } catch (emailError) {
-            // Log error but don't fail user creation
-            logger.error(`Failed to send verification email to ${email}`, { error: emailError });
-          }
-        }
-
-        if (formattedPhone) {
-          // Send OTP via SMS
-          try {
-            await this.twilioService.sendOTP(formattedPhone);
-            logger.info(`Verification SMS sent to: ${formattedPhone}`);
-          } catch (smsError) {
-            // Log error but don't fail user creation
-            logger.error(`Failed to send verification SMS to ${formattedPhone}`, {
-              error: smsError,
+      // 6. Send Invite (Only for new invites)
+      // Logic: If we just created the Auth user, OR if they were a shadow user (created recently/no login), send invite.
+      if (isNewAuth || !user.lastLoginAt) {
+        try {
+          if (email) {
+            const { data: linkData } = await supabase.auth.admin.generateLink({
+              type: 'recovery',
+              email: email,
+              options: { redirectTo: `${env.FRONTEND_URL}/update-password` },
             });
+            if (linkData.properties?.action_link) {
+              await this.emailService.sendVerificationEmail(email, linkData.properties.action_link);
+            }
+          } else if (formattedPhone) {
+            await this.twilioService.sendOTP(formattedPhone);
           }
+        } catch (notifyError) {
+          logger.warn('Failed to send invite notification', { error: notifyError });
         }
-      } catch (notificationError) {
-        // Log error but don't fail user creation
-        logger.error('Failed to send verification notification', { error: notificationError });
       }
 
-      return { user, isNewUser: true };
+      return { user, isNewUser: isNewAuth };
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
-        'Failed to find or create user',
+        'User creation failed',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
         ErrorType.DATABASE
       );

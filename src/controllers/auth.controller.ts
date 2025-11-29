@@ -241,27 +241,38 @@ export class AuthController {
       const { phoneNumber, code } = value;
       const formattedPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        phone: formattedPhoneNumber,
-        token: code,
-        type: 'sms',
+      // 1. Verify OTP via Twilio
+      const { TwilioService } = await import('../services/twilio.service');
+      const isValid = await TwilioService.getInstance().verifyOTP(formattedPhoneNumber, code);
+      if (!isValid) {
+        throw new AppError('Invalid OTP', HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+      }
+
+      // 2. Find User
+      const { data: listData } = await supabase.auth.admin.listUsers();
+      const user = listData.users.find((u) => u.phone === formattedPhoneNumber);
+      if (!user) {
+        throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
+      }
+
+      // 3. Mark Verified
+      await supabase
+        .from('profiles')
+        .update({ is_phone_verified: true, updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+
+      // 4. Generate Session Link
+      const { data: linkData } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: user.email || `phone-${user.phone}@placeholder.spendwise.com`,
+        options: { redirectTo: `${env.FRONTEND_URL}/dashboard` },
       });
-
-      if (verifyError) {
-        throw new AppError(verifyError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
-      }
-
-      if (data.user) {
-        await supabase
-          .from('profiles')
-          .update({ is_phone_verified: true, updated_at: new Date().toISOString() })
-          .eq('id', data.user.id);
-      }
 
       res.json({
         status: 'success',
-        message: 'Phone number verified successfully',
-        data: data.session,
+        message: 'Phone verified',
+        // Return this so frontend can log the user in
+        actionLink: linkData.properties?.action_link,
       });
     } catch (error) {
       next(error);
