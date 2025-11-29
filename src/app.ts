@@ -114,6 +114,16 @@ app.use('/api/users', routes.userRoutes);
 app.use('/api/expenses', routes.expenseRoutes);
 app.use('/api/analytics', routes.analyticsRoutes);
 
+// Root endpoint
+app.get('/', (_, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Welcome to SpendWise API',
+    version: '1.0.0',
+    documentation: '/api-docs', // Placeholder for future Swagger docs
+  });
+});
+
 // Health check endpoint
 app.get('/health', (_, res) => {
   res.status(200).json({
