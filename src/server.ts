@@ -56,8 +56,6 @@ const gracefulShutdown = async (signal: string) => {
   try {
     // Perform any necessary cleanup (DB connections, etc.)
     logger.info('Cleaning up resources...');
-    // Nothing to clean up for Firebase as it handles its own connections
-
     logger.info('Shutdown completed successfully');
     process.exit(0);
   } catch (error) {
