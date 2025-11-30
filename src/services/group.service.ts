@@ -103,12 +103,6 @@ export class GroupService extends BaseService {
           user_id: data.created_by,
           role: 'admin',
           joined_at: new Date().toISOString(),
-          // display_name and email should ideally be fetched from profiles or passed in.
-          // For now, we assume the frontend/controller might pass them or we fetch them.
-          // But GroupMember model has them.
-          // Let's assume we fetch profile to populate them or the DB trigger handles it?
-          // The user request didn't specify triggers for group members.
-          // I'll fetch the profile to be safe.
         })
         .select()
         .single();
@@ -138,7 +132,7 @@ export class GroupService extends BaseService {
     inviterId: string
   ): Promise<GroupMember> {
     try {
-      // Verify inviter is a member of the group (any member can add others)
+      // Verify inviter is a member of the group
       const { data: inviterMember } = await supabase
         .from('group_members')
         .select('id, role')
@@ -173,8 +167,6 @@ export class GroupService extends BaseService {
           user_id: member.user_id,
           role: member.role,
           joined_at: new Date().toISOString(),
-          // display_name: member.display_name, // If these columns exist in group_members
-          // email: member.email
         })
         .select()
         .single();
@@ -209,12 +201,14 @@ export class GroupService extends BaseService {
       );
 
       // Send notification: Email preferred, fallback to SMS
-      // Email: Send to users with email addresses
-      // SMS: Send to users with phone numbers (if no email or email fails)
       let notificationSent = false;
 
-      // Try email first (if email exists)
-      if (memberProfile?.email) {
+      // FIX: Do NOT send email to shadow email addresses
+      const isShadowEmail =
+        memberProfile?.email && memberProfile.email.endsWith('@shadow.spendwise.local');
+
+      // Try email first (if real email exists)
+      if (memberProfile?.email && !isShadowEmail) {
         try {
           const { EmailService } = await import('./email.service');
           const emailService = EmailService.getInstance();
@@ -222,7 +216,7 @@ export class GroupService extends BaseService {
             memberProfile.email,
             group.name,
             inviterName,
-            inviterEmail, // Include inviter's email
+            inviterEmail,
             groupId
           );
           notificationSent = true;
@@ -235,12 +229,11 @@ export class GroupService extends BaseService {
             groupId,
             groupName: group.name,
           });
-          // Continue to try SMS if email fails
         }
       }
 
-      // Try SMS if email not available or failed
-      if (!notificationSent && memberProfile?.phone_number) {
+      // Try SMS if email not available or failed or is shadow email
+      if ((!notificationSent || isShadowEmail) && memberProfile?.phone_number) {
         try {
           const { TwilioService } = await import('./twilio.service');
           const twilioService = TwilioService.getInstance();
@@ -248,7 +241,7 @@ export class GroupService extends BaseService {
             memberProfile.phone_number,
             group.name,
             inviterName,
-            inviterPhone // Include inviter's phone number
+            inviterPhone
           );
           notificationSent = true;
           logger.info(
@@ -260,12 +253,11 @@ export class GroupService extends BaseService {
             groupId,
             groupName: group.name,
           });
-          // Don't throw - continue with friend addition
         }
       }
 
       if (!notificationSent) {
-        logger.warn(`No notification sent (no email or phone for user ${member.user_id})`, {
+        logger.warn(`No notification sent (no valid email or phone for user ${member.user_id})`, {
           userId: member.user_id,
           groupId,
         });
@@ -274,7 +266,7 @@ export class GroupService extends BaseService {
       // Add bidirectional friendship (if not already friends)
       if (inviterId !== member.user_id) {
         try {
-          // Check if friendship already exists in either direction
+          // Check if friendship already exists
           const { data: existingFriendships } = await supabase
             .from('friends')
             .select('id, user_id, friend_id, status')
@@ -283,8 +275,6 @@ export class GroupService extends BaseService {
             );
 
           if (!existingFriendships || existingFriendships.length === 0) {
-            // Create friendship (one direction is enough - the relationship is bidirectional in logic)
-            // We'll create it from inviter to member
             await supabase.from('friends').insert({
               user_id: inviterId,
               friend_id: member.user_id,
@@ -292,7 +282,6 @@ export class GroupService extends BaseService {
               created_at: new Date().toISOString(),
             });
           } else {
-            // Update existing friendship to accepted if it was pending
             const existing = existingFriendships[0] as { id: string; status: string };
             if (existing.status === 'pending') {
               await supabase
@@ -303,7 +292,6 @@ export class GroupService extends BaseService {
           }
         } catch (friendError) {
           console.error('Error adding friendship:', friendError);
-          // Don't throw - friendship addition failure shouldn't break the flow
         }
       }
 
@@ -325,13 +313,11 @@ export class GroupService extends BaseService {
     requesterId: string
   ): Promise<void> {
     try {
-      // 1. Get group to check creator
       const group = await this.getDocument<Group>(groupId);
       if (!group) {
         throw new NotFoundError('Group not found');
       }
 
-      // 2. Check if member to remove exists
       const { data: memberToRemove, error: memberError } = await supabase
         .from('group_members')
         .select('id, role')
@@ -343,7 +329,6 @@ export class GroupService extends BaseService {
         throw new NotFoundError('Member not found in this group');
       }
 
-      // 3. Check permissions: Only admin (group creator) can remove members OR member can leave themselves
       const isRequesterAdmin = group.created_by === requesterId;
       const isRequesterRemovingSelf = requesterId === memberIdToRemove;
 
@@ -353,12 +338,10 @@ export class GroupService extends BaseService {
         );
       }
 
-      // 4. Check for outstanding balance (only if member is leaving themselves)
       if (isRequesterRemovingSelf) {
         const analytics = await this.getGroupAnalytics(groupId, memberIdToRemove);
         const balance = analytics.memberBalances[memberIdToRemove] || 0;
 
-        // Allow small floating point differences
         if (Math.abs(balance) > 0.01) {
           throw new AppError(
             `Cannot leave group. You have a non-zero balance of ${balance.toFixed(2)}`,
@@ -368,7 +351,6 @@ export class GroupService extends BaseService {
         }
       }
 
-      // 5. Remove member
       const { error: deleteError } = await supabase
         .from('group_members')
         .delete()
@@ -390,13 +372,12 @@ export class GroupService extends BaseService {
     groupId: string,
     data: Omit<GroupExpense, 'id' | 'created_at' | 'updated_at' | 'splits'> & {
       paid_by: string;
-      splits?: Array<{ userId: string; amount: number }>; // Optional splits from request
+      splits?: Array<{ userId: string; amount: number }>;
     }
   ): Promise<GroupExpense> {
     try {
       const group = await this.getDocument<Group>(groupId);
 
-      // Fetch all members to validate and calculate splits
       const { data: members, error: membersError } = await supabase
         .from('group_members')
         .select('*')
@@ -406,9 +387,7 @@ export class GroupService extends BaseService {
 
       let splits: ExpenseSplit[];
 
-      // If splits are provided, use them; otherwise create equal splits
       if (data.splits && data.splits.length > 0) {
-        // Validate that all split user IDs are members of the group
         const memberIds = new Set(members.map((m: { user_id: string }) => m.user_id));
         const invalidUserIds = data.splits.filter((split) => !memberIds.has(split.userId));
 
@@ -420,7 +399,6 @@ export class GroupService extends BaseService {
           );
         }
 
-        // Validate that split amounts sum to total amount (allow small floating point differences)
         const totalSplitAmount = data.splits.reduce((sum, split) => sum + split.amount, 0);
         if (Math.abs(totalSplitAmount - data.amount) > 0.01) {
           throw new AppError(
@@ -430,14 +408,12 @@ export class GroupService extends BaseService {
           );
         }
 
-        // Convert provided splits to ExpenseSplit format
         splits = data.splits.map((split) => ({
           user_id: split.userId,
           amount: split.amount,
           status: 'pending' as const,
         }));
       } else {
-        // Create equal splits for all members
         splits = members.map((member: { user_id: string }) => ({
           user_id: member.user_id,
           amount: data.amount / members.length,
@@ -445,7 +421,6 @@ export class GroupService extends BaseService {
         }));
       }
 
-      // Remove splits from data before inserting (it's not a column, we handle it separately)
       const expenseDataWithoutSplits = {
         amount: data.amount,
         currency: data.currency,
@@ -463,7 +438,7 @@ export class GroupService extends BaseService {
         .insert({
           group_id: groupId,
           ...expenseDataWithoutSplits,
-          splits, // JSONB column
+          splits,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -472,7 +447,6 @@ export class GroupService extends BaseService {
 
       if (error) throw error;
 
-      // Notify members
       const notifications = members
         .filter((member: { user_id: string }) => member.user_id !== data.paid_by)
         .map((member: { user_id: string }) =>
@@ -504,7 +478,6 @@ export class GroupService extends BaseService {
     userId: string
   ): Promise<GroupExpense> {
     try {
-      // Fetch expense
       const { data: expense, error: fetchError } = await supabase
         .from('group_expenses')
         .select('*')
@@ -514,7 +487,6 @@ export class GroupService extends BaseService {
 
       if (fetchError || !expense) throw new NotFoundError('Expense not found');
 
-      // Update split status in JSONB
       const splits = expense.splits as ExpenseSplit[];
       const splitIndex = splits.findIndex((s) => s.user_id === userId);
 
@@ -562,7 +534,6 @@ export class GroupService extends BaseService {
   public async settleGroup(groupId: string, userId: string): Promise<GroupSettlement[]> {
     await this.validateMemberAccess(groupId, userId);
 
-    // Use Supabase RPC for atomicity
     const { data, error } = await supabase.rpc('settle_group_expenses', {
       group_id_param: groupId,
     });
@@ -576,7 +547,6 @@ export class GroupService extends BaseService {
       );
     }
 
-    // RPC returns an array of created settlements
     return (data || []) as unknown as GroupSettlement[];
   }
 
@@ -647,8 +617,8 @@ export class GroupService extends BaseService {
       updatedAt: new Date(group.updated_at),
       members: (group.members || []).map((member) => ({
         userId: member.user_id,
-        displayName: member.display_name || '', // Fetch if needed
-        email: member.email || '', // Fetch if needed
+        displayName: member.display_name || '',
+        email: member.email || '',
         role: member.role,
         joinedAt: new Date(member.joined_at),
       })),
@@ -675,7 +645,7 @@ export class GroupService extends BaseService {
         userId: s.user_id,
         amount: s.amount,
         status: s.status,
-        paidAt: s.paid_at ? new Date(s.paid_at) : undefined, // Fix: Convert string to Date or undefined
+        paidAt: s.paid_at ? new Date(s.paid_at) : undefined,
       })),
       date: new Date(expense.date),
       createdAt: new Date(expense.created_at),

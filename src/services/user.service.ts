@@ -12,7 +12,6 @@ import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 import { logger } from '../utils/logger';
 import { BaseService } from './base.service';
 import { EmailService } from './email.service';
-import { TwilioService } from './twilio.service';
 
 interface UserProfile {
   displayName?: string;
@@ -49,12 +48,10 @@ interface UserStats {
 export class UserService extends BaseService {
   private static instance: UserService;
   private readonly emailService: EmailService;
-  private readonly twilioService: TwilioService;
 
   private constructor() {
     super('profiles');
     this.emailService = EmailService.getInstance();
-    this.twilioService = TwilioService.getInstance();
   }
 
   public static getInstance(): UserService {
@@ -227,23 +224,46 @@ export class UserService extends BaseService {
           isNewAuth = true;
         }
       } catch (err: any) {
-        // Handle "User already registered"
-        // listUsers defaults to 50. Increase to 1000 to find existing users in dev/test.
+        // Only attempt to find existing user if the error specifically indicates duplication
+        const status = err.status || err.code;
+        const msg = (err.message || '').toLowerCase();
+
+        const isDuplicate =
+          status === 422 || msg.includes('already registered') || msg.includes('duplicate');
+
+        if (!isDuplicate) {
+          logger.error('Failed to create user (non-duplicate error):', err);
+          throw new AppError(
+            err.message || 'Failed to create user',
+            typeof status === 'number' && status >= 400 && status < 600
+              ? status
+              : HttpStatusCode.INTERNAL_SERVER_ERROR,
+            ErrorType.DATABASE
+          );
+        }
+
+        // Handle "User already registered" - Robust finding
         const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
 
-        // Robust finder
         const existing = listData.users.find((u) => {
           const emailMatch = u.email?.toLowerCase() === effectiveEmail.toLowerCase();
-          const phoneMatch = formattedPhone && u.phone === formattedPhone;
+
+          let phoneMatch = false;
+          if (formattedPhone && u.phone) {
+            const p1 = formattedPhone.replace(/[^0-9]/g, '');
+            const p2 = u.phone.replace(/[^0-9]/g, '');
+            phoneMatch = p1 === p2;
+          }
+
           return emailMatch || phoneMatch;
         });
 
         if (existing) {
           authUserId = existing.id;
         } else {
-          logger.error(`Could not create or find user: ${effectiveEmail} / ${formattedPhone}`);
+          logger.error(`Could not locate existing user: ${effectiveEmail} / ${formattedPhone}`);
           throw new AppError(
-            'User exists but could not be located',
+            'User already exists but could not be retrieved. Please try again.',
             HttpStatusCode.INTERNAL_SERVER_ERROR,
             ErrorType.DATABASE
           );
@@ -261,7 +281,6 @@ export class UserService extends BaseService {
           phone_number: formattedPhone || '',
           display_name: displayName || 'Invited User',
           status: 'active',
-          // Preserve verification status if updating
           updated_at: new Date().toISOString(),
         })
         .select()
@@ -278,8 +297,9 @@ export class UserService extends BaseService {
 
       const user = this.transformUserResponse(newProfile);
 
-      // 6. Send Invite (Only for new invites)
-      // Logic: If we just created the Auth user, OR if they were a shadow user (created recently/no login), send invite.
+      // 6. Send Invite (Only for email magic links)
+      // FIX: Removed Twilio OTP sending here. OTPs are synchronous for login only.
+      // Phone users will get the "Group Invite" SMS from GroupService instead.
       if (isNewAuth || !user.lastLoginAt) {
         try {
           if (email) {
@@ -291,9 +311,8 @@ export class UserService extends BaseService {
             if (linkData.properties?.action_link) {
               await this.emailService.sendVerificationEmail(email, linkData.properties.action_link);
             }
-          } else if (formattedPhone) {
-            await this.twilioService.sendOTP(formattedPhone);
           }
+          // Note: No 'else if (formattedPhone)' block here anymore.
         } catch (notifyError) {
           logger.warn('Failed to send invite notification', { error: notifyError });
         }
@@ -311,9 +330,6 @@ export class UserService extends BaseService {
   }
 
   async generateAuthToken(_uid: string): Promise<string> {
-    // Supabase handles tokens. This might be needed for custom flows but usually client handles it.
-    // If we need to mint a token server-side, we need supabase-admin.
-    // However, typically the client logs in.
     throw new AppError(
       'Generate auth token not supported in Supabase migration yet',
       HttpStatusCode.NOT_IMPLEMENTED,
@@ -365,7 +381,6 @@ export class UserService extends BaseService {
       if (updateData.phoneNumber) updateFields.phone_number = updateData.phoneNumber;
       if (updateData.photoURL) updateFields.photo_url = updateData.photoURL;
       if (updateData.preferences) {
-        // Fetch current preferences to merge
         const currentUser = await this.getDocument<User>(uid);
         updateFields.preferences = {
           ...currentUser.preferences,
@@ -389,7 +404,6 @@ export class UserService extends BaseService {
     try {
       const { error } = await supabase.auth.admin.deleteUser(uid);
       if (error) throw error;
-      // Profile deletion should cascade if configured, or we delete it manually
       await this.deleteDocument(uid);
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -430,11 +444,9 @@ export class UserService extends BaseService {
   private transformUserResponse(
     user: User | { id?: string; [key: string]: unknown }
   ): UserResponse {
-    // Map database 'id' to 'uid' if needed
     const dbUser = user as { id?: string; uid?: string; [key: string]: unknown };
     const uid = dbUser.uid || dbUser.id || '';
 
-    // Map database field names to User interface
     const mappedUser: User = {
       uid,
       email: (dbUser.email as string) || '',
@@ -484,10 +496,6 @@ export class UserService extends BaseService {
   }
 
   async updateSettings(userId: string, data: UserSettings): Promise<UserSettings> {
-    // Assuming settings is another JSONB column or merged into preferences
-    // For now, let's assume it's in preferences or a separate column 'settings'
-    // The model didn't show 'settings' but the interface does.
-    // I'll assume it's a column 'settings'
     try {
       const user = await this.getDocument<User & { settings: UserSettings }>(userId);
       const updatedSettings = {
@@ -532,7 +540,7 @@ export class UserService extends BaseService {
       .from('notifications')
       .update({ read: true, updated_at: new Date().toISOString() })
       .eq('id', notificationId)
-      .eq('user_id', userId) // Security check
+      .eq('user_id', userId)
       .select()
       .single();
 
@@ -569,7 +577,6 @@ export class UserService extends BaseService {
 
   async getUserStats(userId: string): Promise<UserStats> {
     try {
-      // Parallel queries
       const [expensesResult, groupsResult, friendsResult] = await Promise.all([
         supabase.from('expenses').select('amount, category').eq('user_id', userId),
         supabase.from('group_members').select('id', { count: 'exact' }).eq('user_id', userId),

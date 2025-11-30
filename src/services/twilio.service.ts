@@ -31,8 +31,8 @@ export class TwilioService {
       // Generate a 6-digit OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-      // Create message
-      const message = `Your verification code is ${otp}. This code will expire in 5 minutes.`;
+      // Create message with App Name for clarity
+      const message = `Your SpendWise verification code is ${otp}. Valid for 5 minutes.`;
 
       // Send SMS
       const result = await this.client.messages.create({
@@ -82,7 +82,7 @@ export class TwilioService {
   ): Promise<boolean> {
     try {
       const inviterInfo = inviterPhone ? `${inviterName} (${inviterPhone})` : inviterName;
-      const message = `Hi! ${inviterInfo} has added you to the group "${groupName}" on Smart Expense Tracker. You can now view and manage expenses together!`;
+      const message = `Hi! ${inviterInfo} has added you to the group "${groupName}" on SpendWise. Log in to view and settle expenses.`;
 
       const result = await this.client.messages.create({
         body: message,
