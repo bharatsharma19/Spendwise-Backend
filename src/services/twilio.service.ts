@@ -82,7 +82,7 @@ export class TwilioService {
   ): Promise<boolean> {
     try {
       const inviterInfo = inviterPhone ? `${inviterName} (${inviterPhone})` : inviterName;
-      const message = `Hi! ${inviterInfo} has added you to the group "${groupName}" on SpendWise. Log in to view and settle expenses.`;
+      const message = `Hi! ${inviterInfo} has added you to the group "${groupName}" on SpendWise. Log in to view and settle expenses: ${env.FRONTEND_URL}`;
 
       const result = await this.client.messages.create({
         body: message,

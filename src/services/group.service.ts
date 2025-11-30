@@ -201,67 +201,70 @@ export class GroupService extends BaseService {
       );
 
       // Send notification: Email preferred, fallback to SMS
-      let notificationSent = false;
+      // Run in background to avoid blocking response
+      (async () => {
+        let notificationSent = false;
 
-      // FIX: Do NOT send email to shadow email addresses
-      const isShadowEmail =
-        memberProfile?.email && memberProfile.email.endsWith('@shadow.spendwise.local');
+        // FIX: Do NOT send email to shadow email addresses
+        const isShadowEmail =
+          memberProfile?.email && memberProfile.email.endsWith('@shadow.spendwise.local');
 
-      // Try email first (if real email exists)
-      if (memberProfile?.email && !isShadowEmail) {
-        try {
-          const { EmailService } = await import('./email.service');
-          const emailService = EmailService.getInstance();
-          await emailService.sendGroupInviteEmail(
-            memberProfile.email,
-            group.name,
-            inviterName,
-            inviterEmail,
-            groupId
-          );
-          notificationSent = true;
-          logger.info(
-            `Group invite email sent to: ${memberProfile.email} for group "${group.name}"`
-          );
-        } catch (emailError) {
-          logger.error(`Failed to send group invite email to ${memberProfile.email}`, {
-            error: emailError,
+        // Try email first (if real email exists)
+        if (memberProfile?.email && !isShadowEmail) {
+          try {
+            const { EmailService } = await import('./email.service');
+            const emailService = EmailService.getInstance();
+            await emailService.sendGroupInviteEmail(
+              memberProfile.email,
+              group.name,
+              inviterName,
+              inviterEmail,
+              groupId
+            );
+            notificationSent = true;
+            logger.info(
+              `Group invite email sent to: ${memberProfile.email} for group "${group.name}"`
+            );
+          } catch (emailError) {
+            logger.error(`Failed to send group invite email to ${memberProfile.email}`, {
+              error: emailError,
+              groupId,
+              groupName: group.name,
+            });
+          }
+        }
+
+        // Try SMS if email not available or failed or is shadow email
+        if ((!notificationSent || isShadowEmail) && memberProfile?.phone_number) {
+          try {
+            const { TwilioService } = await import('./twilio.service');
+            const twilioService = TwilioService.getInstance();
+            await twilioService.sendGroupInviteSMS(
+              memberProfile.phone_number,
+              group.name,
+              inviterName,
+              inviterPhone
+            );
+            notificationSent = true;
+            logger.info(
+              `Group invite SMS sent to: ${memberProfile.phone_number} for group "${group.name}"`
+            );
+          } catch (smsError) {
+            logger.error(`Failed to send group invite SMS to ${memberProfile.phone_number}`, {
+              error: smsError,
+              groupId,
+              groupName: group.name,
+            });
+          }
+        }
+
+        if (!notificationSent) {
+          logger.warn(`No notification sent (no valid email or phone for user ${member.user_id})`, {
+            userId: member.user_id,
             groupId,
-            groupName: group.name,
           });
         }
-      }
-
-      // Try SMS if email not available or failed or is shadow email
-      if ((!notificationSent || isShadowEmail) && memberProfile?.phone_number) {
-        try {
-          const { TwilioService } = await import('./twilio.service');
-          const twilioService = TwilioService.getInstance();
-          await twilioService.sendGroupInviteSMS(
-            memberProfile.phone_number,
-            group.name,
-            inviterName,
-            inviterPhone
-          );
-          notificationSent = true;
-          logger.info(
-            `Group invite SMS sent to: ${memberProfile.phone_number} for group "${group.name}"`
-          );
-        } catch (smsError) {
-          logger.error(`Failed to send group invite SMS to ${memberProfile.phone_number}`, {
-            error: smsError,
-            groupId,
-            groupName: group.name,
-          });
-        }
-      }
-
-      if (!notificationSent) {
-        logger.warn(`No notification sent (no valid email or phone for user ${member.user_id})`, {
-          userId: member.user_id,
-          groupId,
-        });
-      }
+      })().catch((err) => logger.error('Background notification error', err));
 
       // Add bidirectional friendship (if not already friends)
       if (inviterId !== member.user_id) {

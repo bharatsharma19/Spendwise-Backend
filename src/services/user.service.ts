@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { env } from '../config/env.config';
 import { supabase } from '../config/supabase';
 import { Notification } from '../models/notification.model';
@@ -202,75 +203,16 @@ export class UserService extends BaseService {
       // Use a consistent shadow email for phone-only users to allow easier lookup
       const effectiveEmail =
         email || `phone_${formattedPhone!.replace(/[^0-9]/g, '')}@shadow.spendwise.local`;
-      const tempPassword = Math.random().toString(36).slice(-12) + 'A1!';
 
       let authUserId: string | undefined;
       let isNewAuth = false;
 
-      // 4. Create or Find Auth User
-      try {
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: effectiveEmail,
-          phone: formattedPhone, // Supabase handles E.164 validation
-          password: tempPassword,
-          email_confirm: true,
-          phone_confirm: true,
-          user_metadata: { display_name: displayName || 'Invited User' },
-        });
-
-        if (authError) throw authError;
-        if (authData.user) {
-          authUserId = authData.user.id;
-          isNewAuth = true;
-        }
-      } catch (err: any) {
-        // Only attempt to find existing user if the error specifically indicates duplication
-        const status = err.status || err.code;
-        const msg = (err.message || '').toLowerCase();
-
-        const isDuplicate =
-          status === 422 || msg.includes('already registered') || msg.includes('duplicate');
-
-        if (!isDuplicate) {
-          logger.error('Failed to create user (non-duplicate error):', err);
-          throw new AppError(
-            err.message || 'Failed to create user',
-            typeof status === 'number' && status >= 400 && status < 600
-              ? status
-              : HttpStatusCode.INTERNAL_SERVER_ERROR,
-            ErrorType.DATABASE
-          );
-        }
-
-        // Handle "User already registered" - Robust finding
-        const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-
-        const existing = listData.users.find((u) => {
-          const emailMatch = u.email?.toLowerCase() === effectiveEmail.toLowerCase();
-
-          let phoneMatch = false;
-          if (formattedPhone && u.phone) {
-            const p1 = formattedPhone.replace(/[^0-9]/g, '');
-            const p2 = u.phone.replace(/[^0-9]/g, '');
-            phoneMatch = p1 === p2;
-          }
-
-          return emailMatch || phoneMatch;
-        });
-
-        if (existing) {
-          authUserId = existing.id;
-        } else {
-          logger.error(`Could not locate existing user: ${effectiveEmail} / ${formattedPhone}`);
-          throw new AppError(
-            'User already exists but could not be retrieved. Please try again.',
-            HttpStatusCode.INTERNAL_SERVER_ERROR,
-            ErrorType.DATABASE
-          );
-        }
+      // 4. Create Shadow User (Profile Only)
+      // We do NOT create an Auth user yet. They must "claim" it later.
+      if (!authUserId) {
+        authUserId = uuidv4();
+        isNewAuth = true;
       }
-
-      if (!authUserId) throw new Error('User ID could not be determined');
 
       // 5. Create Profile (Upsert to handle race conditions)
       const { data: newProfile, error: profileError } = await supabase

@@ -129,7 +129,7 @@ async function run() {
     // Ensure Owner exists
     const {
       data: { users },
-    } = await supabaseAdmin.auth.admin.listUsers();
+    } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     let ownerUser = users.find((u) => u.email === owner.email);
 
     if (!ownerUser) {
@@ -192,7 +192,12 @@ async function run() {
       if (actor.phone) payload.phoneNumber = actor.phone;
 
       log('📤', `Inviting ${actor.name}...`);
-      await owner.request('POST', `/api/groups/${groupId}/members`, payload);
+      const memberRes = await owner.request('POST', `/api/groups/${groupId}/members`, payload);
+
+      // CRITICAL: Capture the Shadow User's UID immediately
+      if (memberRes?.data?.user_id) {
+        actor.uid = memberRes.data.user_id;
+      }
     }
 
     await sleep(2000); // Wait for background shadow user creation
@@ -208,25 +213,48 @@ async function run() {
     const claimAndLogin = async (actor: UserActor) => {
       const shadowEmail = actor.getShadowEmail();
 
-      // Refresh user list to find the newly created shadow user
-      const {
-        data: { users },
-      } = await supabaseAdmin.auth.admin.listUsers();
-      const user = users.find((u) => u.email?.toLowerCase() === shadowEmail.toLowerCase());
+      // 1. Find the Shadow Profile (created by invite)
+      // We search in the 'profiles' table, NOT auth.users yet
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('email', shadowEmail)
+        .single();
 
-      if (!user) {
-        log('❌', `Shadow user not found for ${actor.name} (${shadowEmail})`);
+      if (profileError || !profile) {
+        log('❌', `Shadow profile not found for ${actor.name} (${shadowEmail})`);
         return false;
       }
 
-      // Claim account
-      await supabaseAdmin.auth.admin.updateUserById(user.id, {
-        password: commonPassword,
-        email_confirm: true,
-        phone_confirm: true,
-      });
+      // 2. Check if Auth User already exists (maybe from previous run)
+      const {
+        data: { user: existingAuth },
+      } = await supabaseAdmin.auth.admin.getUserById(profile.id);
 
-      // Login
+      if (!existingAuth) {
+        // 3. CLAIM ACCOUNT: Create Auth User with the SAME ID as the Profile
+        log('✨', `Claiming account for ${actor.name}...`);
+        const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+          id: profile.id, // CRITICAL: Link to existing profile ID
+          email: shadowEmail,
+          password: commonPassword,
+          email_confirm: true,
+          phone_confirm: true,
+          user_metadata: { display_name: actor.name },
+        });
+
+        if (createError) {
+          log('❌', `Failed to create auth user for ${actor.name}: ${createError.message}`);
+          return false;
+        }
+      } else {
+        // Ensure password is set if user existed
+        await supabaseAdmin.auth.admin.updateUserById(profile.id, {
+          password: commonPassword,
+        });
+      }
+
+      // 4. Login
       const { data } = await supabaseClient.auth.signInWithPassword({
         email: shadowEmail,
         password: commonPassword,
@@ -271,31 +299,42 @@ async function run() {
     // 6. GROUP EXPENSES & SPLITS
     // ==========================================
     log('\n🔹', 'STEP 6: Group Expenses');
+    const groupDetails = await owner.request('GET', `/api/groups/${groupId}`);
+    const memberIds = groupDetails?.data?.members?.map((m: any) => m.userId) || [];
 
-    if (activeActors.length < 2) {
-      log('⚠️', 'Not enough active members to test splits properly');
+    if (memberIds.length < 2) {
+      log('⚠️', 'Not enough members to test splits properly');
     } else {
-      // 1. Owner pays $300 (Split equally among remaining members)
-      await owner.request('POST', `/api/groups/${groupId}/expenses`, {
-        amount: 300,
-        currency: 'USD',
-        category: 'housing',
-        description: 'Hotel Booking',
-        date: new Date().toISOString(),
-        splits: activeActors.map((a) => ({ userId: a.uid!, amount: 300 / activeActors.length })),
-      });
+      // --- REAL WORLD SCENARIO: 5-8 Diverse Expenses ---
+      const expenses = [
+        { desc: 'Hotel Booking', amount: 300, cat: 'housing', payerIdx: 0 }, // Owner pays
+        { desc: 'Dinner at Mario', amount: 80, cat: 'food', payerIdx: 1 }, // User 1 pays
+        { desc: 'Uber to Museum', amount: 25, cat: 'transport', payerIdx: 0 }, // Owner pays
+        { desc: 'Museum Tickets', amount: 60, cat: 'entertainment', payerIdx: 2 }, // User 2 pays (if exists)
+        { desc: 'Drinks', amount: 40, cat: 'food', payerIdx: 1 }, // User 1 pays
+        { desc: 'Breakfast', amount: 35, cat: 'food', payerIdx: 0 }, // Owner pays
+        { desc: 'Souvenirs', amount: 50, cat: 'shopping', payerIdx: 0 }, // Owner pays
+      ];
 
-      // 2. Second User pays $60
-      const secondUser = activeActors[1];
-      if (secondUser && secondUser.token) {
-        await secondUser.request('POST', `/api/groups/${groupId}/expenses`, {
-          amount: 60,
-          currency: 'USD',
-          category: 'food',
-          description: 'Dinner',
-          date: new Date().toISOString(),
-          splits: activeActors.map((a) => ({ userId: a.uid!, amount: 60 / activeActors.length })),
-        });
+      for (const exp of expenses) {
+        // Ensure payer exists and is active
+        const payer = activeActors[exp.payerIdx] || owner;
+
+        if (payer.token) {
+          await payer.request('POST', `/api/groups/${groupId}/expenses`, {
+            amount: exp.amount,
+            currency: 'USD',
+            category: exp.cat,
+            description: exp.desc,
+            date: new Date().toISOString(),
+            splits: memberIds.map((uid: string) => ({
+              userId: uid,
+              amount: exp.amount / memberIds.length,
+            })),
+          });
+          // Small delay to simulate real timing
+          await sleep(100);
+        }
       }
     }
 
