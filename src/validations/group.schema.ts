@@ -39,18 +39,7 @@ export const groupSchema = {
   addGroupExpense: Joi.object({
     amount: Joi.number().positive().required().precision(2),
     currency: Joi.string().length(VALIDATION_CONSTANTS.CURRENCY_LENGTH).uppercase().required(),
-    category: Joi.string()
-      .valid(...VALIDATION_CONSTANTS.CATEGORIES)
-      .allow('') // Allow blank category
-      .optional() // Make it optional to allow custom categories
-      .custom((value) => {
-        // If provided and not blank, allow any string (custom category) or validate against known
-        if (value && value.trim() !== '') {
-          // Allow custom categories (any string)
-          return value;
-        }
-        return value; // Allow blank/empty
-      }),
+    category: Joi.string().trim().allow('').optional(),
     description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).required().trim(),
     date: Joi.date().iso().required().max('now'),
     location: Joi.object({
