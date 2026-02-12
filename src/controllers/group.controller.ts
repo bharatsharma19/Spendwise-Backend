@@ -316,4 +316,21 @@ export class GroupController {
       next(error);
     }
   };
+
+  public listGroups = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const groups = await this.groupService.getUserGroups(req.user!.uid);
+      res.json({
+        status: 'success',
+        data: groups,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

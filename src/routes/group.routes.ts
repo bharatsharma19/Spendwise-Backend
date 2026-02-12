@@ -9,6 +9,7 @@ const groupController = GroupController.getInstance();
 router.use(authenticate);
 
 // Group management
+router.get('/', groupController.listGroups);
 router.post('/', groupController.createGroup);
 router.get('/:groupId', groupController.getGroup);
 router.post('/:groupId/members', groupController.addGroupMember);

@@ -732,4 +732,49 @@ export class GroupService extends BaseService {
     }
     return this.transformGroupSettlementResponse(settlement as unknown as GroupSettlement);
   }
+
+  public async getUserGroups(userId: string): Promise<GroupResponse[]> {
+    // Fetch groups where user is a member
+    const { data: memberGroups, error: memberError } = await supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', userId);
+
+    if (memberError) {
+      throw new AppError(
+        'Failed to fetch user groups',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+
+    if (!memberGroups || memberGroups.length === 0) {
+      return [];
+    }
+
+    const groupIds = memberGroups.map((g) => g.group_id);
+
+    const { data: groups, error: groupsError } = await supabase
+      .from('groups')
+      .select(
+        `
+        *,
+        members:group_members(*),
+        expenses:group_expenses(*),
+        settlements:group_settlements(*)
+      `
+      )
+      .in('id', groupIds)
+      .order('created_at', { ascending: false });
+
+    if (groupsError) {
+      throw new AppError(
+        'Failed to fetch group details',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+
+    return (groups || []).map((g) => this.transformGroupResponse(g as unknown as Group));
+  }
 }

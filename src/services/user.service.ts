@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+// import { v4 as uuidv4 } from 'uuid';
 import { env } from '../config/env.config';
 import { supabase } from '../config/supabase';
 import { Notification } from '../models/notification.model';
@@ -207,14 +207,39 @@ export class UserService extends BaseService {
       let authUserId: string | undefined;
       let isNewAuth = false;
 
-      // 4. Create Shadow User (Profile Only)
-      // We do NOT create an Auth user yet. They must "claim" it later.
-      if (!authUserId) {
-        authUserId = uuidv4();
-        isNewAuth = true;
+      // 4. Create Auth User (REQUIRED for foreign key constraint)
+      // Check if auth user exists first
+      try {
+        const {
+          data: { users },
+        } = await supabase.auth.admin.listUsers();
+        const existingAuth = users.find((u) => u.email === effectiveEmail);
+
+        if (existingAuth) {
+          authUserId = existingAuth.id;
+        } else {
+          // Create new Auth user
+          const { data: newVal, error: createError } = await supabase.auth.admin.createUser({
+            email: effectiveEmail,
+            email_confirm: true,
+            user_metadata: { displayName: displayName || 'Invited User' },
+          });
+
+          if (createError) throw createError;
+          authUserId = newVal.user.id;
+          isNewAuth = true;
+        }
+      } catch (err) {
+        logger.error('Failed to find/create auth user', err);
+        // Fallback to searching profile via name if auth fails (shouldn't happen)
+        throw new AppError(
+          'Failed to create auth user',
+          HttpStatusCode.INTERNAL_SERVER_ERROR,
+          ErrorType.DATABASE
+        );
       }
 
-      // 5. Create Profile (Upsert to handle race conditions)
+      // 5. Create/Update Profile
       const { data: newProfile, error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -239,22 +264,17 @@ export class UserService extends BaseService {
 
       const user = this.transformUserResponse(newProfile);
 
-      // 6. Send Invite (Only for email magic links)
-      // FIX: Removed Twilio OTP sending here. OTPs are synchronous for login only.
-      // Phone users will get the "Group Invite" SMS from GroupService instead.
-      if (isNewAuth || !user.lastLoginAt) {
+      // 6. Send Invite (Only for newly created email users)
+      if (isNewAuth && email) {
         try {
-          if (email) {
-            const { data: linkData } = await supabase.auth.admin.generateLink({
-              type: 'recovery',
-              email: email,
-              options: { redirectTo: `${env.FRONTEND_URL}/update-password` },
-            });
-            if (linkData.properties?.action_link) {
-              await this.emailService.sendVerificationEmail(email, linkData.properties.action_link);
-            }
+          const { data: linkData } = await supabase.auth.admin.generateLink({
+            type: 'recovery',
+            email: email,
+            options: { redirectTo: `${env.FRONTEND_URL}/update-password` },
+          });
+          if (linkData.properties?.action_link) {
+            await this.emailService.sendVerificationEmail(email, linkData.properties.action_link);
           }
-          // Note: No 'else if (formattedPhone)' block here anymore.
         } catch (notifyError) {
           logger.warn('Failed to send invite notification', { error: notifyError });
         }
