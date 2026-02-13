@@ -57,6 +57,7 @@ export class ExpenseController {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
+      const token = req.token;
 
       const { error, value } = expenseSchema.createExpense.validate(req.body);
       if (error) {
@@ -78,7 +79,7 @@ export class ExpenseController {
           ? {
               recurringDetails: {
                 frequency: value.recurringFrequency,
-                nextDueDate: value.date, // Default to expense date for now
+                nextDueDate: value.date,
               },
             }
           : {}),
@@ -87,14 +88,14 @@ export class ExpenseController {
               splitDetails: {
                 splits: value.splitWith.map((userId: string) => ({
                   userId,
-                  amount: value.splitAmount || 0, // Simplified split logic
+                  amount: value.splitAmount || 0,
                 })),
               },
             }
           : {}),
       };
 
-      const expense = await expenseService.createExpense(uid, expenseData);
+      const expense = await expenseService.createExpense(uid, expenseData, token);
 
       res.status(201).json({
         status: 'success',
@@ -114,7 +115,7 @@ export class ExpenseController {
         this.handleValidationError({ details: [{ message: 'Expense ID is required' }] });
       }
 
-      const expense = await expenseService.getExpenseById(req.user!.uid, id);
+      const expense = await expenseService.getExpenseById(req.user!.uid, id, req.token);
 
       res.json({
         status: 'success',
@@ -130,12 +131,17 @@ export class ExpenseController {
       this.validateUser(req);
 
       const { startDate, endDate, category, isRecurring } = req.query;
-      const expenses = await expenseService.getExpensesByUserId(req.user.uid, {
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-        category: category as string | undefined,
-        isRecurring: isRecurring ? isRecurring === 'true' : undefined,
-      });
+      const expenses = await expenseService.getExpensesByUserId(
+        req.user.uid,
+        {
+          startDate: startDate ? new Date(startDate as string) : undefined,
+          endDate: endDate ? new Date(endDate as string) : undefined,
+          category: category as string | undefined,
+          isRecurring: isRecurring ? isRecurring === 'true' : undefined,
+        },
+        undefined,
+        req.token
+      );
 
       res.json({
         status: 'success',
@@ -150,6 +156,7 @@ export class ExpenseController {
     try {
       this.validateUser(req);
       const uid = req.user!.uid;
+      const token = req.token;
 
       const { id } = req.params;
       if (!id) {
@@ -185,7 +192,7 @@ export class ExpenseController {
         delete expenseData.splitAmount;
       }
 
-      const expense = await expenseService.updateExpense(uid, id, expenseData);
+      const expense = await expenseService.updateExpense(uid, id, expenseData, token);
 
       res.json({
         status: 'success',
@@ -217,7 +224,8 @@ export class ExpenseController {
       const expense = await expenseService.updateExpenseSplitStatus(
         req.user!.uid,
         id,
-        value.isSplit
+        value.isSplit,
+        req.token
       );
 
       res.json({
@@ -238,7 +246,7 @@ export class ExpenseController {
         this.handleValidationError({ details: [{ message: 'Expense ID is required' }] });
       }
 
-      await expenseService.deleteExpense(req.user!.uid, id);
+      await expenseService.deleteExpense(req.user!.uid, id, req.token);
 
       res.json({
         status: 'success',
@@ -258,10 +266,14 @@ export class ExpenseController {
       this.validateUser(req);
 
       const { startDate, endDate } = req.query;
-      const summary = await expenseService.getExpenseSummary(req.user.uid, {
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-      });
+      const summary = await expenseService.getExpenseSummary(
+        req.user.uid,
+        {
+          startDate: startDate ? new Date(startDate as string) : undefined,
+          endDate: endDate ? new Date(endDate as string) : undefined,
+        },
+        req.token
+      );
 
       res.json({
         status: 'success',
@@ -277,10 +289,14 @@ export class ExpenseController {
       this.validateUser(req);
 
       const { startDate, endDate } = req.query;
-      const stats = await expenseService.getCategoryStats(req.user.uid, {
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-      });
+      const stats = await expenseService.getCategoryStats(
+        req.user.uid,
+        {
+          startDate: startDate ? new Date(startDate as string) : undefined,
+          endDate: endDate ? new Date(endDate as string) : undefined,
+        },
+        req.token
+      );
 
       res.json({
         status: 'success',
@@ -298,7 +314,8 @@ export class ExpenseController {
       const { interval } = req.query;
       const trends = await expenseService.getExpenseTrends(
         req.user.uid,
-        interval as 'daily' | 'weekly' | 'monthly' | undefined
+        interval as 'daily' | 'weekly' | 'monthly' | undefined,
+        req.token
       );
 
       res.json({
@@ -329,7 +346,8 @@ export class ExpenseController {
       const analytics = await expenseService.getExpenseAnalytics(
         uid,
         new Date(startDate as string),
-        new Date(endDate as string)
+        new Date(endDate as string),
+        req.token
       );
 
       res.json({

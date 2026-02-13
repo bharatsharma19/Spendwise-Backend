@@ -5,6 +5,8 @@ import { AuthenticationError } from '../utils/error';
 
 export interface AuthRequest extends Request {
   user?: User;
+  /** Raw JWT token for creating user-scoped Supabase clients */
+  token?: string;
 }
 
 export const authenticate = async (
@@ -44,6 +46,9 @@ export const authenticate = async (
       // Merge Auth data with Profile data
       ...userProfile,
     } as User; // Cast to User model
+
+    // Attach raw JWT token for user-scoped Supabase clients
+    (req as AuthRequest).token = token;
 
     next();
   } catch (error) {

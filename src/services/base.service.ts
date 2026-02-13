@@ -1,4 +1,6 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
+import { createUserClient } from '../config/supabaseClient';
 import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 
 export interface QueryOptions {
@@ -17,8 +19,21 @@ export abstract class BaseService {
     this.table = table;
   }
 
-  protected async getDocument<T>(id: string): Promise<T> {
-    const { data, error } = await supabase.from(this.table).select('*').eq('id', id).single();
+  /**
+   * Returns a user-scoped Supabase client (respects RLS) if token is provided,
+   * otherwise returns the admin client (bypasses RLS).
+   * Always prefer passing a token for data operations.
+   */
+  protected getClient(token?: string): SupabaseClient {
+    if (token) {
+      return createUserClient(token);
+    }
+    return supabase;
+  }
+
+  protected async getDocument<T>(id: string, token?: string): Promise<T> {
+    const client = this.getClient(token);
+    const { data, error } = await client.from(this.table).select('*').eq('id', id).single();
 
     if (error || !data) {
       throw new AppError(`${this.table} not found`, HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
@@ -26,8 +41,9 @@ export abstract class BaseService {
     return data as T;
   }
 
-  protected async createDocument<T>(data: Record<string, unknown>): Promise<T> {
-    const { data: created, error } = await supabase
+  protected async createDocument<T>(data: Record<string, unknown>, token?: string): Promise<T> {
+    const client = this.getClient(token);
+    const { data: created, error } = await client
       .from(this.table)
       .insert({
         ...data,
@@ -38,7 +54,6 @@ export abstract class BaseService {
       .single();
 
     if (error) {
-      console.error(`Error creating in ${this.table}:`, error);
       throw new AppError(
         `Failed to create ${this.table}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -48,8 +63,13 @@ export abstract class BaseService {
     return created as T;
   }
 
-  protected async updateDocument<T>(id: string, data: Record<string, unknown>): Promise<T> {
-    const { data: updated, error } = await supabase
+  protected async updateDocument<T>(
+    id: string,
+    data: Record<string, unknown>,
+    token?: string
+  ): Promise<T> {
+    const client = this.getClient(token);
+    const { data: updated, error } = await client
       .from(this.table)
       .update({
         ...data,
@@ -60,7 +80,6 @@ export abstract class BaseService {
       .single();
 
     if (error) {
-      console.error(`Error updating ${this.table}:`, error);
       throw new AppError(
         `Failed to update ${this.table}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,
@@ -70,8 +89,9 @@ export abstract class BaseService {
     return updated as T;
   }
 
-  protected async deleteDocument(id: string): Promise<void> {
-    const { error } = await supabase.from(this.table).delete().eq('id', id);
+  protected async deleteDocument(id: string, token?: string): Promise<void> {
+    const client = this.getClient(token);
+    const { error } = await client.from(this.table).delete().eq('id', id);
     if (error) {
       throw new AppError(
         `Failed to delete from ${this.table}`,
@@ -83,9 +103,11 @@ export abstract class BaseService {
 
   protected async getCollection<T>(
     filters: { field: string; operator: string; value: unknown }[] = [],
-    options?: QueryOptions
+    options?: QueryOptions,
+    token?: string
   ): Promise<T[]> {
-    let query = supabase.from(this.table).select('*');
+    const client = this.getClient(token);
+    let query = client.from(this.table).select('*');
 
     filters.forEach(({ field, operator, value }) => {
       switch (operator) {
@@ -111,8 +133,7 @@ export abstract class BaseService {
           query = query.contains(field, [value]);
           break;
         default:
-          // Fallback for other operators if supported or custom logic needed
-          console.warn(`Unsupported operator ${operator} for field ${field}`);
+          break;
       }
     });
 
@@ -131,7 +152,6 @@ export abstract class BaseService {
     const { data, error } = await query;
 
     if (error) {
-      console.error(error);
       throw new AppError(
         `Failed to fetch collection ${this.table}`,
         HttpStatusCode.INTERNAL_SERVER_ERROR,

@@ -1,4 +1,3 @@
-import { supabase } from '../config/supabase';
 import {
   CreateExpenseDto,
   ExpenseAnalytics,
@@ -62,8 +61,13 @@ export class ExpenseService extends BaseService {
     return nextDate;
   }
 
-  async createExpense(userId: string, data: CreateExpenseDto): Promise<ExpenseResponse> {
+  async createExpense(
+    userId: string,
+    data: CreateExpenseDto,
+    token?: string
+  ): Promise<ExpenseResponse> {
     try {
+      const client = this.getClient(token);
       const dateObj = data.date instanceof Date ? data.date : new Date(data.date);
       const expenseData = {
         user_id: userId,
@@ -84,7 +88,7 @@ export class ExpenseService extends BaseService {
         updated_at: new Date().toISOString(),
       };
 
-      const { data: expense, error } = await supabase
+      const { data: expense, error } = await client
         .from('expenses')
         .insert(expenseData)
         .select()
@@ -101,8 +105,6 @@ export class ExpenseService extends BaseService {
       );
     }
   }
-
-  // ... (keep other methods)
 
   private transformExpenseResponse(data: Record<string, unknown>): ExpenseResponse {
     return {
@@ -129,9 +131,10 @@ export class ExpenseService extends BaseService {
     };
   }
 
-  async getExpenseById(userId: string, id: string): Promise<ExpenseResponse> {
+  async getExpenseById(userId: string, id: string, token?: string): Promise<ExpenseResponse> {
     try {
-      const { data: expense, error } = await supabase
+      const client = this.getClient(token);
+      const { data: expense, error } = await client
         .from('expenses')
         .select('*')
         .eq('id', id)
@@ -141,6 +144,7 @@ export class ExpenseService extends BaseService {
         throw new NotFoundError('Expense not found');
       }
 
+      // Defense-in-depth: verify ownership even with RLS
       if (expense.user_id !== userId) {
         throw new AuthorizationError('Unauthorized access');
       }
@@ -161,10 +165,12 @@ export class ExpenseService extends BaseService {
   async getExpensesByUserId(
     userId: string,
     query: ExpenseQuery = {},
-    options?: QueryOptions
+    options?: QueryOptions,
+    token?: string
   ): Promise<ExpenseResponse[]> {
     try {
-      let supabaseQuery = supabase.from('expenses').select('*').eq('user_id', userId);
+      const client = this.getClient(token);
+      let supabaseQuery = client.from('expenses').select('*').eq('user_id', userId);
 
       if (query.startDate) {
         supabaseQuery = supabaseQuery.gte('date', query.startDate.toISOString());
@@ -195,8 +201,6 @@ export class ExpenseService extends BaseService {
       if (options?.limit) {
         supabaseQuery = supabaseQuery.limit(options.limit);
       }
-      // Offset not directly supported in BaseService options interface but Supabase supports range
-      // We'll stick to what BaseService options provide or just limit.
 
       const { data: expenses, error } = await supabaseQuery;
 
@@ -216,11 +220,14 @@ export class ExpenseService extends BaseService {
   async updateExpense(
     userId: string,
     id: string,
-    data: Partial<CreateExpenseDto> // Use CreateExpenseDto partial for updates to match structure
+    data: Partial<CreateExpenseDto>,
+    token?: string
   ): Promise<ExpenseResponse> {
     try {
-      // Fetch existing to verify ownership and validation
-      const { data: currentExpense, error: fetchError } = await supabase
+      const client = this.getClient(token);
+
+      // Fetch existing to verify ownership
+      const { data: currentExpense, error: fetchError } = await client
         .from('expenses')
         .select('*')
         .eq('id', id)
@@ -252,7 +259,7 @@ export class ExpenseService extends BaseService {
       if (data.isSplit !== undefined) updateData.is_split = data.isSplit;
       if (data.splitDetails !== undefined) updateData.split_details = data.splitDetails;
 
-      const { data: updatedExpense, error: updateError } = await supabase
+      const { data: updatedExpense, error: updateError } = await client
         .from('expenses')
         .update(updateData)
         .eq('id', id)
@@ -274,11 +281,12 @@ export class ExpenseService extends BaseService {
     }
   }
 
-  async deleteExpense(userId: string, id: string): Promise<void> {
+  async deleteExpense(userId: string, id: string, token?: string): Promise<void> {
     try {
-      // Check ownership first (or let RLS handle it, but we are using service role maybe? No, we should be careful)
-      // If we use service role, we MUST check ownership.
-      const { data: expense, error: fetchError } = await supabase
+      const client = this.getClient(token);
+
+      // Defense-in-depth: check ownership even with RLS
+      const { data: expense, error: fetchError } = await client
         .from('expenses')
         .select('user_id')
         .eq('id', id)
@@ -292,7 +300,7 @@ export class ExpenseService extends BaseService {
         throw new AuthorizationError('Unauthorized access');
       }
 
-      const { error: deleteError } = await supabase.from('expenses').delete().eq('id', id);
+      const { error: deleteError } = await client.from('expenses').delete().eq('id', id);
 
       if (deleteError) throw deleteError;
     } catch (error) {
@@ -310,13 +318,19 @@ export class ExpenseService extends BaseService {
   async getExpenseAnalytics(
     userId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    token?: string
   ): Promise<ExpenseAnalytics> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, {
-        startDate,
-        endDate,
-      });
+      const expenses = await this.getExpensesByUserId(
+        userId,
+        {
+          startDate,
+          endDate,
+        },
+        undefined,
+        token
+      );
 
       const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
@@ -440,17 +454,19 @@ export class ExpenseService extends BaseService {
   async updateExpenseSplitStatus(
     userId: string,
     expenseId: string,
-    isSplit: boolean
+    isSplit: boolean,
+    token?: string
   ): Promise<ExpenseResponse> {
-    return this.updateExpense(userId, expenseId, { isSplit });
+    return this.updateExpense(userId, expenseId, { isSplit }, token);
   }
 
   async getExpenseSummary(
     userId: string,
-    query: { startDate?: Date; endDate?: Date } = {}
+    query: { startDate?: Date; endDate?: Date } = {},
+    token?: string
   ): Promise<ExpenseSummary> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, query);
+      const expenses = await this.getExpensesByUserId(userId, query, undefined, token);
       const amounts = expenses.map((expense) => expense.amount);
 
       return {
@@ -474,10 +490,11 @@ export class ExpenseService extends BaseService {
 
   async getCategoryStats(
     userId: string,
-    query: { startDate?: Date; endDate?: Date } = {}
+    query: { startDate?: Date; endDate?: Date } = {},
+    token?: string
   ): Promise<CategoryStats> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, query);
+      const expenses = await this.getExpensesByUserId(userId, query, undefined, token);
       const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
       if (total === 0) {
@@ -515,10 +532,11 @@ export class ExpenseService extends BaseService {
 
   async getExpenseTrends(
     userId: string,
-    interval: 'daily' | 'weekly' | 'monthly' = 'monthly'
+    interval: 'daily' | 'weekly' | 'monthly' = 'monthly',
+    token?: string
   ): Promise<ExpenseTrends> {
     try {
-      const expenses = await this.getExpensesByUserId(userId);
+      const expenses = await this.getExpensesByUserId(userId, {}, undefined, token);
       const trends: ExpenseTrends = {
         total: 0,
         count: 0,

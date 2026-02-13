@@ -13,6 +13,7 @@ export interface EnvConfig {
   // Supabase
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  SUPABASE_ANON_KEY: string;
 
   // Email (Gmail SMTP)
   EMAIL_USER: string;
@@ -31,8 +32,9 @@ const envSchema = Joi.object({
   ALLOWED_ORIGINS: Joi.string().default('http://localhost:3000,http://localhost:19006'),
 
   SUPABASE_URL: Joi.string().uri().required(),
-  SUPABASE_SERVICE_ROLE_KEY: Joi.string().required(),
 
+  SUPABASE_SERVICE_ROLE_KEY: Joi.string().required(),
+  SUPABASE_ANON_KEY: Joi.string().required(),
   EMAIL_USER: Joi.string().email().required(),
   EMAIL_APP_PASSWORD: Joi.string().required(),
 
@@ -68,6 +70,7 @@ export const env: EnvConfig = {
 
   SUPABASE_URL: safeEnvVars.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: safeEnvVars.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY: safeEnvVars.SUPABASE_ANON_KEY,
 
   EMAIL_USER: safeEnvVars.EMAIL_USER,
   EMAIL_APP_PASSWORD: safeEnvVars.EMAIL_APP_PASSWORD,
