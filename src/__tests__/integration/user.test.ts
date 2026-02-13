@@ -1,11 +1,15 @@
 import request from 'supertest';
 import app from '../../app';
 import { supabase } from '../../config/supabase';
-import { mockAuthenticate, mockUser } from '../utils/mockAuth';
+import { mockUser } from '../utils/mockAuth';
 
-jest.mock('../../middleware/auth', () => ({
-  authenticate: mockAuthenticate,
-}));
+jest.mock('../../middleware/auth', () => {
+  const { mockAuthenticate } = require('../utils/mockAuth');
+  return {
+    authenticate: mockAuthenticate,
+    AuthRequest: jest.fn(),
+  };
+});
 
 describe('User Routes', () => {
   describe('GET /api/users/profile', () => {
@@ -40,7 +44,7 @@ describe('User Routes', () => {
         .send({ displayName: 'Updated Name' });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.display_name).toBe('Updated Name');
+      expect(res.body.data.displayName).toBe('Updated Name');
     });
   });
 });

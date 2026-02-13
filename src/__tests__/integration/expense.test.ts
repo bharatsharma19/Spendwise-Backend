@@ -1,12 +1,15 @@
 import request from 'supertest';
 import app from '../../app';
 import { supabase } from '../../config/supabase';
-import { mockAuthenticate } from '../utils/mockAuth';
 
 // Mock the authentication middleware for these protected routes
-jest.mock('../../middleware/auth', () => ({
-  authenticate: mockAuthenticate,
-}));
+jest.mock('../../middleware/auth', () => {
+  const { mockAuthenticate } = require('../utils/mockAuth');
+  return {
+    authenticate: mockAuthenticate,
+    AuthRequest: jest.fn(),
+  };
+});
 
 describe('Expense Routes', () => {
   describe('POST /api/expenses', () => {
