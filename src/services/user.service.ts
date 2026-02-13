@@ -212,30 +212,34 @@ export class UserService extends BaseService {
       let isNewAuth = false;
 
       // 4. Create Auth User (REQUIRED for foreign key constraint)
-      // Check if auth user exists first
+      // Try to create the user first; if they already exist, look them up
       try {
-        const {
-          data: { users },
-        } = await supabase.auth.admin.listUsers();
-        const existingAuth = users.find((u) => u.email === effectiveEmail);
+        // Attempt to create the auth user
+        const { data: newVal, error: createError } = await supabase.auth.admin.createUser({
+          email: effectiveEmail,
+          email_confirm: true,
+          user_metadata: { displayName: displayName || 'Invited User' },
+        });
 
-        if (existingAuth) {
-          authUserId = existingAuth.id;
+        if (createError) {
+          // User likely already exists — look them up by email in profiles
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('email', effectiveEmail)
+            .single();
+
+          if (existingProfile) {
+            authUserId = existingProfile.id;
+          } else {
+            throw createError;
+          }
         } else {
-          // Create new Auth user
-          const { data: newVal, error: createError } = await supabase.auth.admin.createUser({
-            email: effectiveEmail,
-            email_confirm: true,
-            user_metadata: { displayName: displayName || 'Invited User' },
-          });
-
-          if (createError) throw createError;
           authUserId = newVal.user.id;
           isNewAuth = true;
         }
       } catch (err) {
         logger.error('Failed to find/create auth user', err);
-        // Fallback to searching profile via name if auth fails (shouldn't happen)
         throw new AppError(
           'Failed to create auth user',
           HttpStatusCode.INTERNAL_SERVER_ERROR,
