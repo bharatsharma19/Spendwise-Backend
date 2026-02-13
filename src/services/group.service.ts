@@ -202,7 +202,7 @@ export class GroupService extends BaseService {
 
       // Send notification: Email preferred, fallback to SMS
       // Run in background to avoid blocking response
-      (async () => {
+      (async (): Promise<void> => {
         let notificationSent = false;
 
         // FIX: Do NOT send email to shadow email addresses

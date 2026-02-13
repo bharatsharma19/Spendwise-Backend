@@ -17,6 +17,21 @@ export class NotificationService extends BaseService {
     return NotificationService.instance;
   }
 
+  // Method to send push notification (fire and forget)
+  private sendPush(
+    userId: string,
+    title: string,
+    message: string,
+    data?: Record<string, unknown>
+  ): void {
+    // Dynamic import to avoid circular dependencies if any, though not strictly needed here
+    import('./push-notification.service').then(({ PushNotificationService }) => {
+      PushNotificationService.getInstance()
+        .sendPushNotifications([userId], title, message, data)
+        .catch((err) => console.error('Failed to trigger push notification:', err));
+    });
+  }
+
   public async createNotification(
     data: Omit<Notification, 'id' | 'createdAt' | 'updatedAt' | 'read'>
   ): Promise<Notification> {
@@ -196,7 +211,7 @@ export class NotificationService extends BaseService {
     groupName: string,
     invitedBy: string
   ): Promise<Notification> {
-    return this.createNotification({
+    const notification = await this.createNotification({
       userId,
       type: 'group_invite',
       title: 'New Group Invitation',
@@ -207,6 +222,15 @@ export class NotificationService extends BaseService {
         invitedBy,
       },
     });
+
+    this.sendPush(
+      userId,
+      'New Group Invitation',
+      `You have been invited to join the group "${groupName}"`,
+      { groupId, type: 'group_invite' }
+    );
+
+    return notification;
   }
 
   public async createExpenseAddedNotification(
@@ -217,7 +241,7 @@ export class NotificationService extends BaseService {
     amount: number,
     currency: string
   ): Promise<Notification> {
-    return this.createNotification({
+    const notification = await this.createNotification({
       userId,
       type: 'expense_added',
       title: 'New Expense Added',
@@ -230,6 +254,15 @@ export class NotificationService extends BaseService {
         currency,
       },
     });
+
+    this.sendPush(
+      userId,
+      'New Expense Added',
+      `A new expense of ${amount} ${currency} has been added to "${groupName}"`,
+      { groupId, expenseId, type: 'expense_added' }
+    );
+
+    return notification;
   }
 
   public async createExpensePaidNotification(
@@ -240,7 +273,7 @@ export class NotificationService extends BaseService {
     amount: number,
     currency: string
   ): Promise<Notification> {
-    return this.createNotification({
+    const notification = await this.createNotification({
       userId,
       type: 'expense_paid',
       title: 'Expense Paid',
@@ -253,6 +286,15 @@ export class NotificationService extends BaseService {
         currency,
       },
     });
+
+    this.sendPush(
+      userId,
+      'Expense Paid',
+      `An expense of ${amount} ${currency} in "${groupName}" has been paid`,
+      { groupId, expenseId, type: 'expense_paid' }
+    );
+
+    return notification;
   }
 
   public async createGroupSettledNotification(
@@ -260,7 +302,7 @@ export class NotificationService extends BaseService {
     groupId: string,
     groupName: string
   ): Promise<Notification> {
-    return this.createNotification({
+    const notification = await this.createNotification({
       userId,
       type: 'group_settled',
       title: 'Group Settled',
@@ -270,6 +312,13 @@ export class NotificationService extends BaseService {
         groupName,
       },
     });
+
+    this.sendPush(userId, 'Group Settled', `All expenses in "${groupName}" have been settled`, {
+      groupId,
+      type: 'group_settled',
+    });
+
+    return notification;
   }
 
   private transformNotificationResponse(data: Record<string, unknown>): Notification {

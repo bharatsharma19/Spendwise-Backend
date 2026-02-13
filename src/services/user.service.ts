@@ -190,13 +190,17 @@ export class UserService extends BaseService {
         try {
           const u = await this.getUserByEmail(email);
           return { user: u, isNewUser: false };
-        } catch {}
+        } catch (error) {
+          // User not found by email, continue to check phone or create
+        }
       }
       if (formattedPhone) {
         try {
           const u = await this.getUserByPhone(formattedPhone);
           return { user: u, isNewUser: false };
-        } catch {}
+        } catch (error) {
+          // User not found by phone, continue to create
+        }
       }
 
       // 3. Prepare Auth Data

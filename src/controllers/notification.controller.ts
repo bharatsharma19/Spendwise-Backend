@@ -3,9 +3,11 @@ import Joi from 'joi';
 import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/user.model';
 import { NotificationService } from '../services/notification.service';
+import { PushNotificationService } from '../services/push-notification.service';
 import { AppError, ErrorType, HttpStatusCode, ValidationError } from '../utils/error';
 
 const notificationService = NotificationService.getInstance();
+const pushService = PushNotificationService.getInstance();
 
 type AuthenticatedRequest = Omit<AuthRequest, 'user'> & {
   user: Required<Pick<User, 'uid'>> & Omit<User, 'uid'>;
@@ -114,6 +116,49 @@ export class NotificationController {
       res.json({
         status: 'success',
         data: null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async registerPushToken(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      this.validateUser(req);
+      const userId = req.user!.uid;
+      const { token, deviceType } = req.body;
+
+      if (!token) {
+        this.handleValidationError({ details: [{ message: 'Token is required' }] });
+      }
+
+      await pushService.registerToken(userId, token, deviceType);
+
+      res.json({
+        status: 'success',
+        message: 'Push token registered',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async sendBroadcast(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      this.validateUser(req);
+      // TODO: Add admin check here
+
+      const { title, body, data } = req.body;
+
+      if (!title || !body) {
+        this.handleValidationError({ details: [{ message: 'Title and body are required' }] });
+      }
+
+      await pushService.sendBroadcast(title, body, data);
+
+      res.json({
+        status: 'success',
+        message: 'Broadcast sent',
       });
     } catch (error) {
       next(error);
