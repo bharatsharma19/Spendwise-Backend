@@ -1,27 +1,26 @@
 import { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger';
+import { AuthRequest } from './auth';
 
 export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
   const { method, originalUrl, ip } = req;
-  const userAgent = req.get('user-agent');
 
   res.on('finish', () => {
     const duration = Date.now() - start;
     const { statusCode } = res;
     const contentLength = res.get('content-length');
 
+    // Only log safe, non-sensitive fields
     logger.info('HTTP Request', {
-      correlationId: req.headers['x-correlation-id'],
+      requestId: req.headers['x-request-id'],
+      userId: (req as AuthRequest).user?.uid,
       method,
-      url: originalUrl,
+      route: originalUrl,
       status: statusCode,
       duration: `${duration}ms`,
       contentLength,
       ip,
-      userAgent,
-      query: Object.keys(req.query).length > 0 ? req.query : undefined,
-      body: Object.keys(req.body).length > 0 ? req.body : undefined,
     });
   });
 

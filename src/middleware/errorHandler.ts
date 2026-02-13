@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env.config';
 import { AppError } from '../utils/error';
 import { logger } from '../utils/logger';
+import { AuthRequest } from './auth';
 
 export const errorHandler = (
   err: Error | AppError,
@@ -9,15 +10,14 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // Log error
+  // Log error — only safe, non-sensitive fields
   logger.error('Error:', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
+    requestId: req.headers['x-request-id'],
+    userId: (req as AuthRequest).user?.uid,
+    route: req.path,
     method: req.method,
-    body: req.body,
-    query: req.query,
-    params: req.params,
+    message: err.message,
+    ...(env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 
   if (err instanceof AppError) {

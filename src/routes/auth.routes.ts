@@ -14,13 +14,19 @@ export class AuthRouter extends BaseRouter {
     // Rate limiting for sensitive routes
     const authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 1000, // Increased for testing
+      max: 5, // 5 attempts per 15 minutes
+      keyGenerator: (req) => req.ip || 'unknown',
+      standardHeaders: true,
+      legacyHeaders: false,
       message: 'Too many authentication attempts, please try again after 15 minutes',
     });
 
     const verificationLimiter = rateLimit({
       windowMs: 60 * 60 * 1000, // 1 hour
-      max: 1000, // Increased for testing
+      max: 5, // 5 attempts per hour
+      keyGenerator: (req) => req.ip || 'unknown',
+      standardHeaders: true,
+      legacyHeaders: false,
       message: 'Too many verification attempts, please try again after an hour',
     });
 

@@ -15,11 +15,11 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app: Application = express();
 
-// Correlation ID Middleware
+// Request ID Middleware (UUID per request)
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
-  req.headers['x-correlation-id'] = correlationId;
-  res.setHeader('x-correlation-id', correlationId);
+  const requestId = (req.headers['x-request-id'] as string) || uuidv4();
+  req.headers['x-request-id'] = requestId;
+  res.setHeader('x-request-id', requestId);
   next();
 });
 

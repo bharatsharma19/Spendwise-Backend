@@ -248,23 +248,34 @@ export class AuthController {
         throw new AppError('Invalid OTP', HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
       }
 
-      // 2. Find User
-      const { data: listData } = await supabase.auth.admin.listUsers();
-      const user = listData.users.find((u) => u.phone === formattedPhoneNumber);
-      if (!user) {
+      // 2. Find User by phone number in profiles table (avoid listing all users)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone_number', formattedPhoneNumber)
+        .single();
+
+      if (profileError || !profile) {
         throw new AppError('User not found', HttpStatusCode.NOT_FOUND, ErrorType.NOT_FOUND);
       }
+
+      const userId = profile.id;
 
       // 3. Mark Verified
       await supabase
         .from('profiles')
         .update({ is_phone_verified: true, updated_at: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('id', userId);
 
-      // 4. Generate Session Link
+      // 4. Generate Session Link (need auth user for email)
+      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+      const userEmail =
+        authUser?.user?.email ||
+        `phone-${formattedPhoneNumber.replace('+', '')}@placeholder.spendwise.com`;
+
       const { data: linkData } = await supabase.auth.admin.generateLink({
         type: 'magiclink',
-        email: user.email || `phone-${user.phone}@placeholder.spendwise.com`,
+        email: userEmail,
         options: { redirectTo: `${env.FRONTEND_URL}/dashboard` },
       });
 
