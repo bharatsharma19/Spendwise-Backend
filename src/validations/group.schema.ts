@@ -13,6 +13,16 @@ export const groupSchema = {
     }),
   }),
 
+  updateGroup: Joi.object({
+    name: Joi.string().max(VALIDATION_CONSTANTS.NAME_MAX_LENGTH).trim().optional(),
+    description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).trim().optional(),
+    settings: Joi.object({
+      allowMemberInvites: Joi.boolean(),
+      requireApproval: Joi.boolean(),
+      defaultSplitType: Joi.string().valid(...VALIDATION_CONSTANTS.SPLIT_TYPES),
+    }).optional(),
+  }),
+
   joinGroup: Joi.object({
     code: Joi.string()
       .length(VALIDATION_CONSTANTS.GROUP_CODE_LENGTH)

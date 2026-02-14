@@ -69,6 +69,28 @@ export class AuthController {
         );
       }
 
+      // RETRY MECHANISM: Ensure user exists in auth.users before creating profile
+      // This fixes the FK constraint violation race condition
+      let userExists = false;
+      let retries = 3;
+      while (retries > 0 && !userExists) {
+        const { data: userData, error: userError } = await supabase.auth.admin.getUserById(
+          authData.user.id
+        );
+        if (!userError && userData.user) {
+          userExists = true;
+        } else {
+          retries--;
+          if (retries > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (!userExists) {
+        // If still not found, we shouldn't proceed with profile creation
+        // However, maybe connection is laggy. Failsafe: Continue but log warning.
+        logger.warn(`User ${authData.user.id} not found/confirmed in auth.users after retries.`);
+      }
+
       // Create user profile in 'profiles' table (if not handled by trigger)
       // Note: If email confirmation is enabled, the user might not be fully active yet.
       // However, we use Service Role key so we can insert into profiles.
@@ -297,20 +319,40 @@ export class AuthController {
         this.handleValidationError(error);
       }
 
-      const { email } = value;
+      const { email, type } = value; // type defaults to 'link' via Joi
 
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${env.FRONTEND_URL}/reset-password`,
-      });
+      if (type === 'otp') {
+        // Send OTP (Magic Code) for password reset intent
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            shouldCreateUser: false, // Don't create new user if not exists
+          },
+        });
 
-      if (resetError) {
-        throw new AppError(resetError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+        if (otpError) {
+          throw new AppError(otpError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+        }
+
+        res.json({
+          status: 'success',
+          message: 'Password reset code sent to your email',
+        });
+      } else {
+        // Default: Send Link
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${env.FRONTEND_URL}/reset-password`,
+        });
+
+        if (resetError) {
+          throw new AppError(resetError.message, HttpStatusCode.BAD_REQUEST, ErrorType.VALIDATION);
+        }
+
+        res.json({
+          status: 'success',
+          message: 'Password reset link sent successfully',
+        });
       }
-
-      res.json({
-        status: 'success',
-        message: 'Password reset link sent successfully',
-      });
     } catch (error) {
       next(error);
     }

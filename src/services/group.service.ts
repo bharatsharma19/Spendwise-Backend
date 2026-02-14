@@ -777,4 +777,69 @@ export class GroupService extends BaseService {
 
     return (groups || []).map((g) => this.transformGroupResponse(g as unknown as Group));
   }
+
+  public async updateGroup(
+    groupId: string,
+    data: Partial<Omit<Group, 'id' | 'created_at' | 'updated_at' | 'created_by'>>,
+    userId: string
+  ): Promise<Group> {
+    try {
+      // Validate access (must be admin)
+      const group = await this.validateMemberAccess(groupId, userId);
+
+      if (group.created_by !== userId) {
+        throw new AuthorizationError('Only the group creator/admin can update group details');
+      }
+
+      const { data: updatedGroup, error } = await supabase
+        .from('groups')
+        .update({
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', groupId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return updatedGroup as unknown as Group;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to update group',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  public async deleteGroup(groupId: string, userId: string): Promise<void> {
+    try {
+      // Validate access (must be admin)
+      const group = await this.validateMemberAccess(groupId, userId);
+
+      if (group.created_by !== userId) {
+        throw new AuthorizationError('Only the group creator can delete the group');
+      }
+
+      // 1. Delete Settlements
+      await supabase.from('group_settlements').delete().eq('group_id', groupId);
+      // 2. Delete Expenses
+      await supabase.from('group_expenses').delete().eq('group_id', groupId);
+      // 3. Delete Members
+      await supabase.from('group_members').delete().eq('group_id', groupId);
+      // 4. Delete Group
+      const { error } = await supabase.from('groups').delete().eq('id', groupId);
+
+      if (error) throw error;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to delete group',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
 }

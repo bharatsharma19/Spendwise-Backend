@@ -54,6 +54,7 @@ export const authSchema = {
 
   resetPassword: Joi.object({
     email: Joi.string().email().required().trim().lowercase(),
+    type: Joi.string().valid('link', 'otp').default('link').optional(),
   }),
 
   resendEmailVerification: Joi.object({

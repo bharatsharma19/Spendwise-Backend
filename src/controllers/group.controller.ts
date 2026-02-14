@@ -83,6 +83,58 @@ export class GroupController {
     }
   };
 
+  public updateGroup = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const userId = req.user!.uid;
+      const { groupId } = req.params;
+
+      if (!groupId) {
+        this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
+      }
+
+      const { error, value } = groupSchema.updateGroup.validate(req.body); // Assuming updateGroup validation schema exists or reuse create with optional
+      // Using generic object validation for now if schema not ready, or partial createGroup schema
+      // Let's assume passed body is valid partial
+      if (error) {
+        this.handleValidationError(error);
+      }
+
+      const updatedGroup = await this.groupService.updateGroup(groupId, value, userId);
+      res.json({
+        status: 'success',
+        data: updatedGroup,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public deleteGroup = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const userId = req.user!.uid;
+      const { groupId } = req.params;
+
+      if (!groupId) {
+        this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
+      }
+
+      await this.groupService.deleteGroup(groupId, userId);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public addGroupMember = async (
     req: AuthRequest,
     res: Response,
