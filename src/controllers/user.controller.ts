@@ -207,4 +207,20 @@ export class UserController {
       next(error);
     }
   };
+
+  deleteAccount = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const userId = req.user!.uid;
+
+      await userService.deleteUser(userId);
+
+      res.json({
+        status: 'success',
+        message: 'Account deleted successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

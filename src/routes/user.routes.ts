@@ -51,6 +51,9 @@ export class UserRouter extends BaseRouter {
 
     // Get user statistics
     this.addProtectedRoute('get', '/stats', this.userController.getUserStats);
+
+    // Delete account
+    this.addProtectedRoute('delete', '/me', this.userController.deleteAccount);
   }
 }
 

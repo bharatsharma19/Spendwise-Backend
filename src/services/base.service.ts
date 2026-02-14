@@ -4,12 +4,22 @@ import { createUserClient } from '../config/supabaseClient';
 import { AppError, ErrorType, HttpStatusCode } from '../utils/error';
 
 export interface QueryOptions {
+  page?: number;
   limit?: number;
   offset?: number;
+  search?: string;
   orderBy?: {
     field: string;
     direction: 'asc' | 'desc';
   };
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  hasNextPage: boolean;
 }
 
 export abstract class BaseService {

@@ -112,4 +112,19 @@ export class EmailService {
       // Don't throw - email failure shouldn't break the flow
     }
   }
+
+  public async sendEmail(to: string, subject: string, html: string): Promise<void> {
+    try {
+      const mailOptions = {
+        from: `Spendwise <${env.EMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      };
+      await this.transporter.sendMail(mailOptions);
+    } catch (error) {
+      console.error('Email send failed:', error);
+      // We don't throw here to avoid failing the main request if email fails
+    }
+  }
 }

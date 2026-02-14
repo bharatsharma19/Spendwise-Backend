@@ -9,6 +9,11 @@ export interface UserPreferences {
   theme: 'light' | 'dark' | 'system';
   budgetAlerts: boolean;
   monthlyBudget?: number;
+  lastBudgetAlert?: {
+    month: string; // YYYY-MM
+    percentage: number; // 80, 90, 100
+    sentAt: Date;
+  };
 }
 
 export interface User {

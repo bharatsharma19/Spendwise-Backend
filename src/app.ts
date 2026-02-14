@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { requestLogger } from './middleware/requestLogger';
 import routes from './routes';
+import v1Router from './routes/v1.routes';
 import { logger } from './utils/logger';
 
 import { v4 as uuidv4 } from 'uuid';
@@ -109,11 +110,28 @@ if (env.NODE_ENV === 'development') {
 app.use(requestLogger);
 
 // API Routes
-app.use('/api/auth', routes.authRoutes);
-app.use('/api/users', routes.userRoutes);
-app.use('/api/expenses', routes.expenseRoutes);
-app.use('/api/groups', routes.groupRoutes);
-app.use('/api/analytics', routes.analyticsRoutes);
+
+// ...
+
+// API V1 Routes
+app.use('/api/v1', v1Router);
+
+// Legacy API Routes (Deprecated)
+const legacyDeprecationMiddleware = (_req: Request, res: Response, next: NextFunction): void => {
+  res.setHeader('X-API-Deprecation', 'true');
+  res.setHeader(
+    'X-API-Deprecation-Message',
+    'This API version is deprecated. Please upgrade to /api/v1'
+  );
+  next();
+};
+
+app.use('/api/auth', legacyDeprecationMiddleware, routes.authRoutes);
+app.use('/api/users', legacyDeprecationMiddleware, routes.userRoutes);
+app.use('/api/expenses', legacyDeprecationMiddleware, routes.expenseRoutes);
+app.use('/api/groups', legacyDeprecationMiddleware, routes.groupRoutes);
+app.use('/api/analytics', legacyDeprecationMiddleware, routes.analyticsRoutes);
+app.use('/api/notifications', legacyDeprecationMiddleware, routes.notificationRoutes);
 
 // Root endpoint
 app.get('/', (_, res) => {

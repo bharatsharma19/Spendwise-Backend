@@ -85,6 +85,54 @@ export class NotificationService extends BaseService {
     }
   }
 
+  public async getUserNotificationsPaginated(
+    userId: string,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{
+    data: Notification[];
+    totalCount: number;
+    page: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    try {
+      const safePage = Math.max(1, page);
+      const safeLimit = Math.min(100, Math.max(1, limit));
+      const offset = (safePage - 1) * safeLimit;
+
+      const {
+        data: notifications,
+        error,
+        count,
+      } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + safeLimit - 1);
+
+      if (error) throw error;
+
+      const totalCount = count || 0;
+      const totalPages = Math.ceil(totalCount / safeLimit);
+
+      return {
+        data: (notifications || []).map((n) => this.transformNotificationResponse(n)),
+        totalCount,
+        page: safePage,
+        totalPages,
+        hasNextPage: safePage < totalPages,
+      };
+    } catch (error) {
+      throw new AppError(
+        'Failed to get user notifications',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
   public async getUnreadNotifications(userId: string): Promise<Notification[]> {
     try {
       const { data: notifications, error } = await supabase

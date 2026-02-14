@@ -12,7 +12,8 @@ import {
   HttpStatusCode,
   NotFoundError,
 } from '../utils/error';
-import { BaseService, QueryOptions } from './base.service';
+import { logger } from '../utils/logger';
+import { BaseService, PaginatedResponse, QueryOptions } from './base.service';
 
 interface ExpenseQuery {
   startDate?: Date;
@@ -95,6 +96,14 @@ export class ExpenseService extends BaseService {
         .single();
 
       if (error) throw error;
+
+      // Log audit
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const auditService = require('../services/audit.service').AuditService.getInstance();
+      auditService.logAction(userId, 'CREATE', 'expense', expense.id, {
+        amount: expense.amount,
+        category: expense.category,
+      });
 
       return this.transformExpenseResponse(expense);
     } catch (error) {
@@ -217,6 +226,85 @@ export class ExpenseService extends BaseService {
     }
   }
 
+  /**
+   * Paginated expense listing.
+   * Returns data + totalCount + page metadata.
+   */
+  async getExpensesPaginated(
+    userId: string,
+    query: ExpenseQuery = {},
+    options: QueryOptions = {},
+    token?: string
+  ): Promise<PaginatedResponse<ExpenseResponse>> {
+    try {
+      const page = Math.max(1, options.page || 1);
+      const limit = Math.min(100, Math.max(1, options.limit || 20));
+      const offset = (page - 1) * limit;
+
+      const client = this.getClient(token);
+      let supabaseQuery = client
+        .from('expenses')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId);
+
+      if (query.startDate) {
+        supabaseQuery = supabaseQuery.gte('date', query.startDate.toISOString());
+      }
+      if (query.endDate) {
+        supabaseQuery = supabaseQuery.lte('date', query.endDate.toISOString());
+      }
+      if (query.category) {
+        supabaseQuery = supabaseQuery.eq('category', query.category);
+      }
+      if (query.isRecurring !== undefined) {
+        supabaseQuery = supabaseQuery.eq('is_recurring', query.isRecurring);
+      }
+
+      // Full-text Search
+      if (options.search) {
+        // Use 'websearch' type for Google-like search syntax (e.g. "food -dinner")
+        supabaseQuery = supabaseQuery.textSearch('fts', options.search, {
+          type: 'websearch',
+          config: 'english',
+        });
+      }
+
+      // Sorting
+      if (options.orderBy) {
+        supabaseQuery = supabaseQuery.order(options.orderBy.field, {
+          ascending: options.orderBy.direction === 'asc',
+        });
+      } else {
+        supabaseQuery = supabaseQuery.order('date', { ascending: false });
+      }
+
+      // Apply range for pagination
+      supabaseQuery = supabaseQuery.range(offset, offset + limit - 1);
+
+      const { data: expenses, error, count } = await supabaseQuery;
+
+      if (error) throw error;
+
+      const totalCount = count || 0;
+      const totalPages = Math.ceil(totalCount / limit);
+
+      return {
+        data: (expenses || []).map((expense) => this.transformExpenseResponse(expense)),
+        totalCount,
+        page,
+        totalPages,
+        hasNextPage: page < totalPages,
+      };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to get expenses',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
   async updateExpense(
     userId: string,
     id: string,
@@ -268,6 +356,14 @@ export class ExpenseService extends BaseService {
 
       if (updateError) throw updateError;
 
+      // Log audit
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const auditService = require('../services/audit.service').AuditService.getInstance();
+      auditService.logAction(userId, 'UPDATE', 'expense', id, {
+        before: currentExpense,
+        after: updatedExpense,
+      });
+
       return this.transformExpenseResponse(updatedExpense);
     } catch (error) {
       if (error instanceof NotFoundError || error instanceof AuthorizationError) {
@@ -303,6 +399,11 @@ export class ExpenseService extends BaseService {
       const { error: deleteError } = await client.from('expenses').delete().eq('id', id);
 
       if (deleteError) throw deleteError;
+
+      // Log audit
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const auditService = require('../services/audit.service').AuditService.getInstance();
+      auditService.logAction(userId, 'DELETE', 'expense', id, { snapshot: expense });
     } catch (error) {
       if (error instanceof NotFoundError || error instanceof AuthorizationError) {
         throw error;
@@ -466,18 +567,22 @@ export class ExpenseService extends BaseService {
     token?: string
   ): Promise<ExpenseSummary> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, query, undefined, token);
-      const amounts = expenses.map((expense) => expense.amount);
+      const client = this.getClient(token);
+      const { data, error } = await client.rpc('get_expense_summary', {
+        p_user_id: userId,
+        p_start_date: query.startDate?.toISOString() || null,
+        p_end_date: query.endDate?.toISOString() || null,
+      });
 
+      if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : data;
       return {
-        total: amounts.reduce((sum, amount) => sum + amount, 0),
-        count: expenses.length,
-        average:
-          amounts.length > 0
-            ? amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length
-            : 0,
-        min: amounts.length > 0 ? Math.min(...amounts) : 0,
-        max: amounts.length > 0 ? Math.max(...amounts) : 0,
+        total: Number(row?.total ?? 0),
+        count: Number(row?.count ?? 0),
+        average: Number(row?.average ?? 0),
+        min: Number(row?.min_amount ?? 0),
+        max: Number(row?.max_amount ?? 0),
       };
     } catch (error) {
       throw new AppError(
@@ -494,31 +599,26 @@ export class ExpenseService extends BaseService {
     token?: string
   ): Promise<CategoryStats> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, query, undefined, token);
-      const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const client = this.getClient(token);
+      const { data, error } = await client.rpc('get_category_stats', {
+        p_user_id: userId,
+        p_start_date: query.startDate?.toISOString() || null,
+        p_end_date: query.endDate?.toISOString() || null,
+      });
 
-      if (total === 0) {
-        return {};
-      }
+      if (error) throw error;
 
       const categoryStats: CategoryStats = {};
-      expenses.forEach((expense) => {
-        const category = expense.category || 'other';
-        if (!categoryStats[category]) {
-          categoryStats[category] = {
-            total: 0,
-            count: 0,
-            average: 0,
-            percentage: 0,
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          categoryStats[row.category] = {
+            total: Number(row.total),
+            count: Number(row.count),
+            average: Number(row.average),
+            percentage: Number(row.percentage),
           };
         }
-
-        categoryStats[category].total += expense.amount;
-        categoryStats[category].count += 1;
-        categoryStats[category].average =
-          categoryStats[category].total / categoryStats[category].count;
-        categoryStats[category].percentage = (categoryStats[category].total / total) * 100;
-      });
+      }
 
       return categoryStats;
     } catch (error) {
@@ -536,53 +636,51 @@ export class ExpenseService extends BaseService {
     token?: string
   ): Promise<ExpenseTrends> {
     try {
-      const expenses = await this.getExpensesByUserId(userId, {}, undefined, token);
-      const trends: ExpenseTrends = {
-        total: 0,
-        count: 0,
-        byCategory: {},
-        byDate: {},
-      };
+      const client = this.getClient(token);
 
-      for (const expense of expenses) {
-        const amount = expense.amount;
-        const category = expense.category || 'other';
-        const date = expense.date;
+      // Get date-bucketed trends from SQL
+      const { data: trendData, error: trendError } = await client.rpc('get_expense_trends', {
+        p_user_id: userId,
+        p_interval: interval,
+      });
 
-        trends.total += amount;
-        trends.count += 1;
+      if (trendError) throw trendError;
 
-        if (!trends.byCategory[category]) {
-          trends.byCategory[category] = { total: 0, count: 0 };
+      // Get category breakdown from SQL (reuse category stats RPC)
+      const { data: catData, error: catError } = await client.rpc('get_category_stats', {
+        p_user_id: userId,
+        p_start_date: null,
+        p_end_date: null,
+      });
+
+      if (catError) throw catError;
+
+      const byDate: Record<string, { total: number; count: number }> = {};
+      let total = 0;
+      let count = 0;
+
+      if (Array.isArray(trendData)) {
+        for (const row of trendData) {
+          byDate[row.period] = {
+            total: Number(row.total),
+            count: Number(row.count),
+          };
+          total += Number(row.total);
+          count += Number(row.count);
         }
-        trends.byCategory[category].total += amount;
-        trends.byCategory[category].count += 1;
-
-        let key = '';
-        switch (interval) {
-          case 'daily':
-            key = date.toISOString().split('T')[0];
-            break;
-          case 'weekly': {
-            const weekStart = new Date(date);
-            weekStart.setDate(date.getDate() - date.getDay());
-            key = weekStart.toISOString().split('T')[0];
-            break;
-          }
-          case 'monthly':
-          default:
-            key = date.toISOString().slice(0, 7);
-            break;
-        }
-
-        if (!trends.byDate[key]) {
-          trends.byDate[key] = { total: 0, count: 0 };
-        }
-        trends.byDate[key].total += amount;
-        trends.byDate[key].count += 1;
       }
 
-      return trends;
+      const byCategory: Record<string, { total: number; count: number }> = {};
+      if (Array.isArray(catData)) {
+        for (const row of catData) {
+          byCategory[row.category] = {
+            total: Number(row.total),
+            count: Number(row.count),
+          };
+        }
+      }
+
+      return { total, count, byCategory, byDate };
     } catch (error) {
       throw new AppError(
         'Failed to get expense trends',
@@ -590,5 +688,56 @@ export class ExpenseService extends BaseService {
         ErrorType.DATABASE
       );
     }
+  }
+
+  // Upload receipt
+  public async uploadReceipt(
+    expenseId: string,
+    file: { buffer: Buffer; mimetype: string },
+    userToken?: string
+  ): Promise<string> {
+    const client = this.getClient(userToken);
+    const userId = (await client.auth.getUser()).data.user?.id;
+
+    if (!userId) {
+      throw new AppError(
+        'User not authenticated',
+        HttpStatusCode.UNAUTHORIZED,
+        ErrorType.AUTHENTICATION
+      );
+    }
+
+    // Generate unique filename: userId/expenseId-timestamp.ext
+    const ext = file.mimetype.split('/')[1] || 'jpg';
+    const filename = `${userId}/${expenseId}-${Date.now()}.${ext}`;
+
+    const { error } = await client.storage.from('receipts').upload(filename, file.buffer, {
+      contentType: file.mimetype,
+      upsert: true,
+    });
+
+    if (error) {
+      logger.error('Failed to upload receipt', error);
+      throw new AppError(
+        'Failed to upload receipt',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE // Fallback as ExternalService might not exist
+      );
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = client.storage.from('receipts').getPublicUrl(filename);
+    const publicUrl = publicUrlData.publicUrl;
+
+    // Update expense record with receipt URL
+    // Note: updateExpense expects (userId, id, updates, token)
+    await this.updateExpense(
+      userId, // Corrected to include userId as per updateExpenseSplitStatus usage
+      expenseId,
+      { receiptUrl: publicUrl },
+      userToken
+    );
+
+    return publicUrl;
   }
 }

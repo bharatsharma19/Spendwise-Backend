@@ -457,11 +457,23 @@ export class UserService extends BaseService {
     if (data.phoneNumber) updateData.phone_number = data.phoneNumber;
 
     const updatedUser = await this.updateDocument<User>(userId, updateData);
+
+    // Log audit
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const auditService = require('../services/audit.service').AuditService.getInstance();
+    auditService.logAction(userId, 'UPDATE', 'profile', userId, { changes: updateData });
+
     return this.transformUserResponse(updatedUser);
   }
 
   async updatePreferences(userId: string, data: UserPreferences): Promise<UserPreferences> {
     const user = await this.updateUserPreferences(userId, data);
+
+    // Log audit
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const auditService = require('../services/audit.service').AuditService.getInstance();
+    auditService.logAction(userId, 'UPDATE', 'profile', userId, { preferences: data });
+
     return user.preferences;
   }
 

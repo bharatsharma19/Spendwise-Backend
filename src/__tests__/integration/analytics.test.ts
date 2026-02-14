@@ -3,6 +3,7 @@ import app from '../../app';
 import { supabase } from '../../config/supabase';
 
 jest.mock('../../middleware/auth', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { mockAuthenticate } = require('../utils/mockAuth');
   return {
     authenticate: mockAuthenticate,

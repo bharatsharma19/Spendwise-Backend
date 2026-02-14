@@ -23,6 +23,7 @@ export interface EnvConfig {
   TWILIO_ACCOUNT_SID: string;
   TWILIO_AUTH_TOKEN: string;
   TWILIO_PHONE_NUMBER: string;
+  CRON_SECRET: string;
 }
 
 const envSchema = Joi.object({
@@ -41,6 +42,7 @@ const envSchema = Joi.object({
   TWILIO_ACCOUNT_SID: Joi.string().required(),
   TWILIO_AUTH_TOKEN: Joi.string().required(),
   TWILIO_PHONE_NUMBER: Joi.string().required(),
+  CRON_SECRET: Joi.string().required(),
 }).unknown();
 
 const { error, value: envVars } = envSchema.validate(process.env, {
@@ -78,6 +80,7 @@ export const env: EnvConfig = {
   TWILIO_ACCOUNT_SID: safeEnvVars.TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN: safeEnvVars.TWILIO_AUTH_TOKEN,
   TWILIO_PHONE_NUMBER: safeEnvVars.TWILIO_PHONE_NUMBER,
+  CRON_SECRET: safeEnvVars.CRON_SECRET,
 };
 
 export default env;

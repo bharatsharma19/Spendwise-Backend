@@ -27,6 +27,7 @@ export enum ErrorType {
   NOT_FOUND = 'NotFoundError',
   CONFLICT = 'ConflictError',
   DATABASE = 'DatabaseError',
+  EXTERNAL_SERVICE = 'ExternalServiceError',
 }
 
 // Base Error Class
