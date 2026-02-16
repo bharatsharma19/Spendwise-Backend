@@ -4,7 +4,7 @@ import { VALIDATION_CONSTANTS } from '../middleware/validate';
 export const groupSchema = {
   createGroup: Joi.object({
     name: Joi.string().max(VALIDATION_CONSTANTS.NAME_MAX_LENGTH).required().trim(),
-    description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).trim(),
+    description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).allow('').trim(),
     currency: Joi.string().length(VALIDATION_CONSTANTS.CURRENCY_LENGTH).uppercase().required(),
     settings: Joi.object({
       allowMemberInvites: Joi.boolean(),
@@ -15,7 +15,11 @@ export const groupSchema = {
 
   updateGroup: Joi.object({
     name: Joi.string().max(VALIDATION_CONSTANTS.NAME_MAX_LENGTH).trim().optional(),
-    description: Joi.string().max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH).trim().optional(),
+    description: Joi.string()
+      .max(VALIDATION_CONSTANTS.DESCRIPTION_MAX_LENGTH)
+      .allow('')
+      .trim()
+      .optional(),
     settings: Joi.object({
       allowMemberInvites: Joi.boolean(),
       requireApproval: Joi.boolean(),

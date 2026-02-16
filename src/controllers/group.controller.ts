@@ -369,6 +369,35 @@ export class GroupController {
     }
   };
 
+  public getGroupExpenses = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.validateUser(req);
+      const userId = req.user!.uid;
+      const { groupId } = req.params;
+      const { limit, offset } = req.query;
+
+      if (!groupId) {
+        this.handleValidationError({ details: [{ message: 'Group ID is required' }] });
+      }
+
+      const expenses = await this.groupService.getGroupExpenses(groupId, userId, {
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+        offset: offset ? parseInt(offset as string, 10) : undefined,
+      });
+
+      res.status(200).json({
+        status: 'success',
+        data: expenses,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public listGroups = async (
     req: AuthRequest,
     res: Response,

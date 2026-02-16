@@ -59,7 +59,7 @@ export class GroupService extends BaseService {
       .select(
         `
         *,
-        members:group_members(*),
+        members:group_members(*, profile:profiles(display_name, email, photo_url)),
         expenses:group_expenses(*),
         settlements:group_settlements(*)
       `
@@ -417,9 +417,14 @@ export class GroupService extends BaseService {
           status: 'pending' as const,
         }));
       } else {
-        splits = members.map((member: { user_id: string }) => ({
+        const count = members.length;
+        const totalAmount = data.amount;
+        const baseAmount = Math.floor((totalAmount * 100) / count) / 100;
+        const remainder = Math.round(totalAmount * 100 - baseAmount * 100 * count);
+
+        splits = members.map((member: { user_id: string }, index: number) => ({
           user_id: member.user_id,
-          amount: data.amount / members.length,
+          amount: index < remainder ? Number((baseAmount + 0.01).toFixed(2)) : baseAmount,
           status: 'pending' as const,
         }));
       }
@@ -600,8 +605,48 @@ export class GroupService extends BaseService {
         expenseByCategory,
       };
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(
         'Failed to get group analytics',
+        HttpStatusCode.INTERNAL_SERVER_ERROR,
+        ErrorType.DATABASE
+      );
+    }
+  }
+
+  public async getGroupExpenses(
+    groupId: string,
+    userId: string,
+    options: { limit?: number; offset?: number } = {}
+  ): Promise<GroupExpenseResponse[]> {
+    await this.validateMemberAccess(groupId, userId);
+
+    try {
+      let query = supabase
+        .from('group_expenses')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('date', { ascending: false });
+
+      if (options.limit) {
+        query = query.limit(options.limit);
+      }
+
+      if (options.offset) {
+        query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
+      }
+
+      const { data: expenses, error } = await query;
+
+      if (error) throw error;
+
+      return (expenses || []).map((expense: GroupExpense) =>
+        this.transformGroupExpenseResponse(expense)
+      );
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to get group expenses',
         HttpStatusCode.INTERNAL_SERVER_ERROR,
         ErrorType.DATABASE
       );
@@ -618,12 +663,13 @@ export class GroupService extends BaseService {
       totalMembers: group.members?.length || 0,
       createdAt: new Date(group.created_at),
       updatedAt: new Date(group.updated_at),
-      members: (group.members || []).map((member) => ({
+      members: (group.members || []).map((member: any) => ({
         userId: member.user_id,
-        displayName: member.display_name || '',
-        email: member.email || '',
+        displayName: member.profile?.display_name || member.display_name || '',
+        email: member.profile?.email || member.email || '',
         role: member.role,
         joinedAt: new Date(member.joined_at),
+        photoUrl: member.profile?.photo_url,
       })),
     };
   }
@@ -759,7 +805,7 @@ export class GroupService extends BaseService {
       .select(
         `
         *,
-        members:group_members(*),
+        members:group_members(*, profile:profiles(display_name, email, photo_url)),
         expenses:group_expenses(*),
         settlements:group_settlements(*)
       `

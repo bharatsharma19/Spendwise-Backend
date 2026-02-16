@@ -20,6 +20,7 @@ router.post('/:groupId/leave', groupController.leaveGroup);
 router.post('/:groupId/expenses', groupController.addGroupExpense);
 router.post('/:groupId/expenses/:expenseId/pay', groupController.markExpenseAsPaid);
 router.post('/:groupId/settle', groupController.settleGroup);
+router.get('/:groupId/expenses', groupController.getGroupExpenses);
 router.get('/:groupId/analytics', groupController.getGroupAnalytics);
 
 export default router;

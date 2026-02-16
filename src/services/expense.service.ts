@@ -119,7 +119,7 @@ export class ExpenseService extends BaseService {
     return {
       id: data.id as string,
       userId: data.user_id as string,
-      amount: data.amount as number,
+      amount: Number(data.amount),
       category: data.category as ExpenseCategory,
       description: data.description as string,
       date: new Date(data.date as string | number | Date),

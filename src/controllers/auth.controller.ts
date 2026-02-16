@@ -72,7 +72,7 @@ export class AuthController {
       // RETRY MECHANISM: Ensure user exists in auth.users before creating profile
       // This fixes the FK constraint violation race condition
       let userExists = false;
-      let retries = 3;
+      let retries = 5; // Increased retries
       while (retries > 0 && !userExists) {
         const { data: userData, error: userError } = await supabase.auth.admin.getUserById(
           authData.user.id
@@ -81,20 +81,21 @@ export class AuthController {
           userExists = true;
         } else {
           retries--;
-          if (retries > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Wait 1.5s between retries
+          if (retries > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
         }
       }
 
       if (!userExists) {
-        // If still not found, we shouldn't proceed with profile creation
-        // However, maybe connection is laggy. Failsafe: Continue but log warning.
-        logger.warn(`User ${authData.user.id} not found/confirmed in auth.users after retries.`);
+        // Log critical warning
+        logger.error(
+          `CRITICAL: User ${authData.user.id} created in Auth but not found in admin check after retries.`
+        );
       }
 
       // Create user profile in 'profiles' table (if not handled by trigger)
       // Note: If email confirmation is enabled, the user might not be fully active yet.
       // However, we use Service Role key so we can insert into profiles.
-      // Frontend should handle the "check email" flow.
       // We use upsert to handle potential race conditions if a trigger also creates the profile.
       const userData = {
         id: authData.user.id,

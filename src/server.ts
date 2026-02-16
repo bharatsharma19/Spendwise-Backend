@@ -8,7 +8,7 @@ import { logger } from './utils/logger';
 const connections = new Set<Socket>();
 
 // Track the server instance
-const server = app.listen(env.PORT, async () => {
+const server = app.listen(env.PORT, '0.0.0.0', async () => {
   logger.info(`Server is running on port ${env.PORT}`);
   logger.info(`Environment: ${env.NODE_ENV}`);
   logger.info(`Server URL: http://localhost:${env.PORT}`);
